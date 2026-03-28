@@ -118,7 +118,7 @@ function default_puzzle!(m)
     h, w = size(m)
     row_off = 2w-1
     for c=1:w, r=1:h
-        p = Piece(c + (r-1)*row_off, c+w+1+(r-1)*row_off, c + r*row_off, c+w+(r-1)*row_off)
+        p = Piece(w + c-1 + (r-2)*row_off, c + (r-1)*row_off, w + c-1 + (r-1)*row_off, c-1 + (r-1)*row_off)
         m[r, c] = Piece(invert(p.top), p.right, p.bottom, invert(p.left))
     end
     for c=1:w
@@ -207,11 +207,9 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
             end
         end
 
-        sol1, out
+        nothing
     end
 end
-
-stats = []
 
 let map::Vector{Int} = zeros(Int, 1024)
 
@@ -222,10 +220,6 @@ let map::Vector{Int} = zeros(Int, 1024)
 
         for connection_id=1:n
             if !any(graph)
-                global stats = []
-                for id=1:connection_id-1
-                    push!(stats, 0.5*sum((abs(m) == id for m in map)))
-                end
                 break
             end
 
@@ -359,45 +353,59 @@ function rot_symmetric_pieces_exist(puzzle)
     return false
 end
 
-let pairs::Vector{Tuple{Piece, Piece}} = []
+let pairs::Vector{NTuple{6, Int16}} = []
+
+    function tuple(p1, p2)
+        Int16.((p1.left.id, p1.top.id, p2.top.id, p2.right.id, p2.bottom.id, p1.bottom.id))
+    end
 
     global function same_pair_exists(puzzle)
         h, w = size(puzzle)
         empty!(pairs)
         for c=1:w-1, r=1:h
-            push!(pairs, (puzzle[r, c], puzzle[r, c+1]))
-        end
-        for c=1:w, r=1:h-1
-            push!(pairs, (rotate(puzzle[r, c], -1), rotate(puzzle[r+1, c], -1)))
-        end
+            p1 = puzzle[r, c]
+            p2 = puzzle[r, c+1]
 
-        # check that each pair cannot be reassembled differently into itself
-        for p in pairs
             for r1=1:4, r2=1:4
-                u = (rotate(p[2], r1), rotate(p[1], r2))
-                if is_fit(u[1].right, u[2].left)
-                    if (p[1].left, p[1].top, p[2].top, p[2].right, p[2].bottom, p[1].bottom) ==
-                        (u[1].left, u[1].top, u[2].top, u[2].right, u[2].bottom, u[1].bottom)
+                # check that each pair cannot be reassembled differently into itself
+                u1, u2 = rotate(p2, r1), rotate(p1, r2)
+                if is_fit(u1.right, u2.left)
+                    if tuple(p1, p2) == tuple(u1, u2)
                         return true
                     end
                 end
             end
+            
+            push!(pairs, tuple(p1, p2))
+            push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
+        end
+        for c=1:w, r=1:h-1
+            p1 = rotate(puzzle[r, c], -1)
+            p2 = rotate(puzzle[r+1, c], -1)
+
+            for r1=1:4, r2=1:4
+                # check that each pair cannot be reassembled differently into itself
+                u1, u2 = rotate(p2, r1), rotate(p1, r2)
+                if is_fit(u1.right, u2.left)
+                    if tuple(p1, p2) == tuple(u1, u2)
+                        return true
+                    end
+                end
+            end
+            
+            push!(pairs, tuple(p1, p2))
+            push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
 
+        sort!(pairs, alg=QuickSort)
+
         n = length(pairs)
-        for i in 1:n
-            p1, p2 = pairs[i]
-            push!(pairs, (rotate(p2, 2), rotate(p1, 2)))
-        end
-        n = length(pairs)
-        for i=1:n, j=i+1:n
-            p = pairs[i]
-            u = pairs[j]
-            if (p[1].left, p[1].top, p[2].top, p[2].right, p[2].bottom, p[1].bottom) ==
-                (u[1].left, u[1].top, u[2].top, u[2].right, u[2].bottom, u[1].bottom)
+        for i=1:n-1
+            if pairs[i] == pairs[i+1]
                 return true
             end
         end
+
         return false
     end
 
@@ -459,10 +467,43 @@ function all_solutions!(solution, pieces, next_r, next_c, solutions; start_time=
 
 end
 
-function get_all_solutions(puzzle)
+function get_all_solutions(puzzle, max_time=5)
     sols = []
-    success = all_solutions!(copy(puzzle), vec(puzzle[2:end]), 1, 2, sols)
+    success = all_solutions!(copy(puzzle), vec(puzzle[2:end]), 1, 2, sols, max_time=max_time)
     return success, sols
+end
+
+let count::Vector{Int} = zeros(64)
+
+    global function nr_connections(puzzle)
+        h, w = size(puzzle)
+        fill!(count, 0)
+        mx = 0
+        for c=1:w, r=1:h
+            i = abs(puzzle[r, c].top.id)
+            mx = max(mx, i)
+            i == 0 || (count[i] += 1)
+
+            i = abs(puzzle[r, c].right.id)
+            mx = max(mx, i)
+            i == 0 || (count[i] += 1)
+
+            i = abs(puzzle[r, c].bottom.id)
+            mx = max(mx, i)
+            i == 0 || (count[i] += 1)
+
+            i = abs(puzzle[r, c].left.id)
+            mx = max(mx, i)
+            i == 0 || (count[i] += 1)
+        end
+        
+        out = @view(count[1:mx])
+        sort!(out)
+
+        return out
+
+    end
+
 end
 
 function nr_connections_inside(puzzle)
@@ -481,7 +522,7 @@ end
 function generate_puzzle(w, h, nr_trials=10000)
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
-    best_s1, best_s2, best_inner, best_total = (sol1, sol2, 0, 0)
+    best1, best2, best_nr_inner_cs, best_nr_cs, best_most_prominent = (sol1, sol2, 0, 0, 10000)
     sols = []
 
     for t = 1:nr_trials
@@ -493,30 +534,24 @@ function generate_puzzle(w, h, nr_trials=10000)
         # the problem is NP complete https://en.wikipedia.org/wiki/Edge-matching_puzzle
         # but we can check some obvious things to make sure there arent any additional solutions
 
-        if !pieces_are_unique(sol1) 
-            # print(".")
-            continue 
-        end # no duplicate pieces
-        if rot_symmetric_pieces_exist(sol1) 
-            # print("+")
-            continue 
-        end # every piece must not be rotationally symmetric
-        if same_pair_exists(sol1) 
-            print("(*)")
-            continue 
-        end # all pairs of pieces must not be rotationally symmetric
-        if same_pair_exists(sol2) 
-            print("(*)")
-            continue 
-        end # and no two pairs of pieces must be the same
+        if !pieces_are_unique(sol1) continue end # no duplicate pieces
+        if rot_symmetric_pieces_exist(sol1) continue end # every piece must not be rotationally symmetric
+        if same_pair_exists(sol1) continue end # all pairs of pieces must not be rotationally symmetric
+        if same_pair_exists(sol2) continue end # and no two pairs of pieces must be the same
 
-        outer = length(stats)
-        inner = nr_connections_inside(sol1)
-        if inner > best_inner || inner == best_inner && outer > best_total
-            best_s1 = copy(sol1)
-            best_s2 = copy(sol2)
-            best_inner = inner
-            best_total = outer
+        stats = nr_connections(sol1)
+        nr_cs, most_prominent = length(stats), stats[end] ÷ 2
+        nr_inner_cs = nr_connections_inside(sol1)
+        if nr_inner_cs > best_nr_inner_cs || 
+                nr_inner_cs == best_nr_inner_cs && nr_cs > best_nr_cs ||
+                nr_inner_cs == best_nr_inner_cs && nr_cs == best_nr_cs && most_prominent < best_most_prominent
+            best1 = copy(sol1)
+            best2 = copy(sol2)
+            best_nr_inner_cs = nr_inner_cs
+            best_nr_cs = nr_cs
+            best_most_prominent = most_prominent
+
+            println("$(nr_cs), $(nr_inner_cs), $(most_prominent)")
         end
 
         # sols = get_all_solutions(sol1)
@@ -524,7 +559,7 @@ function generate_puzzle(w, h, nr_trials=10000)
         # println()
         # println("trial $t success, $(length(sols)) solutions")
 
-        println("($(length(sols)), $(nr_connections_inside(sol1)), $(length(stats)), $(sort(stats))),")
+        
 
         # if length(sols) > 100
         #     return sol1, sol2
@@ -532,11 +567,20 @@ function generate_puzzle(w, h, nr_trials=10000)
         # return sol1, sol2
     end
     
-    println("total connections: $best_total")
-    println("inner connections: $best_inner")
+    println("total connections: $best_nr_cs")
+    println("inner connections: $best_nr_inner_cs")
     # println("nr_solutions: $(length(get_all_solutions(best_s1)))")
-    best_s1, best_s2
+    best1, best2
 
 end
 
 
+
+
+function save_permutation(puzzle, W=1024, H=1024)
+
+end
+
+function draw_puzzle(puzzle)
+
+end

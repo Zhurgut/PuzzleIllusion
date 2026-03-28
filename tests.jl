@@ -17,7 +17,7 @@ using Test
 #     Piece(l=0, t=-1, b=1, r=5) Piece(l=-5, t=-5, b=5, r=-5) Piece(l=5, t=-5, b=6, r=-5) Piece(l=5, t=6, b=5, r=6) Piece(l=-6, t=1, b=4, r=0); 
 #     Piece(l=0, t=-1, b=0, r=1) Piece(l=-1, t=-5, b=0, r=3) Piece(l=-3, t=-6, b=0, r=2) Piece(l=-2, t=-5, b=0, r=1) Piece(l=-1, t=-4, b=0, r=0)]
 
-
+compute_stats = true
 
 function generate_stats(w, h, nr_trials=100, test=false)
     sol1 = Matrix{Piece}(undef, h, w)
@@ -126,11 +126,11 @@ end
 
 
 
-ref = default_puzzle(16, 16)
-test_puzzle = default_puzzle(16, 16)
+ref = default_puzzle(8,8)
+test_puzzle = default_puzzle(8,8)
 random_puzzle!(ref, test_puzzle)
 resolve_connections!(ref, test_puzzle)
-while !pieces_are_unique(test_puzzle)
+while same_pair_exists(test_puzzle)
     random_puzzle!(ref, test_puzzle)
     resolve_connections!(ref, test_puzzle)
 end
@@ -139,17 +139,6 @@ using BenchmarkTools
 
 @btime pieces_are_unique(test_puzzle)
 @btime pieces_are_unique2(test_puzzle)
-
-# function pieces_are_unique(puzzle)
-#     n = length(puzzle)
-#     for i = 1:n, j=i+1:n
-#         if puzzle[i] == puzzle[j]
-#             return false
-#         end
-#     end
-#     return true
-# end
-
 
 let pieces::Vector{NTuple{4, Int16}} = NTuple{4, Int}[]
 
@@ -172,4 +161,100 @@ let pieces::Vector{NTuple{4, Int16}} = NTuple{4, Int}[]
         return true
 
     end
+end
+
+function test_unique()
+    ref = default_puzzle(16, 16)
+    test_puzzle = default_puzzle(16, 16)
+    for i=1:2000
+        pieces_are_unique(test_puzzle)
+        random_puzzle!(ref, test_puzzle)
+        resolve_connections!(ref, test_puzzle)
+    end
+end
+
+@time test_unique()
+
+function test_pairs()
+    ref = default_puzzle(8,8)
+    test_puzzle = default_puzzle(8,8)
+    for i=1:20000
+        same_pair_exists2(test_puzzle)
+        random_puzzle!(ref, test_puzzle)
+        resolve_connections!(ref, test_puzzle)
+    end
+end
+
+@time test_pairs()
+
+# function pieces_are_unique(puzzle)
+#     n = length(puzzle)
+#     for i = 1:n, j=i+1:n
+#         if puzzle[i] == puzzle[j]
+#             return false
+#         end
+#     end
+#     return true
+# end
+
+
+
+
+
+let pairs::Vector{NTuple{6, Int16}} = []
+
+    function tuple(p1, p2)
+        Int16.((p1.left.id, p1.top.id, p2.top.id, p2.right.id, p2.bottom.id, p1.bottom.id))
+    end
+
+    global function same_pair_exists2(puzzle)
+        h, w = size(puzzle)
+        empty!(pairs)
+        for c=1:w-1, r=1:h
+            p1 = puzzle[r, c]
+            p2 = puzzle[r, c+1]
+
+            for r1=1:4, r2=1:4
+                # check that each pair cannot be reassembled differently into itself
+                u1, u2 = rotate(p2, r1), rotate(p1, r2)
+                if is_fit(u1.right, u2.left)
+                    if tuple(p1, p2) == tuple(u1, u2)
+                        return true
+                    end
+                end
+            end
+            
+            push!(pairs, tuple(p1, p2))
+            push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
+        end
+        for c=1:w, r=1:h-1
+            p1 = rotate(puzzle[r, c], -1)
+            p2 = rotate(puzzle[r+1, c], -1)
+
+            for r1=1:4, r2=1:4
+                # check that each pair cannot be reassembled differently into itself
+                u1, u2 = rotate(p2, r1), rotate(p1, r2)
+                if is_fit(u1.right, u2.left)
+                    if tuple(p1, p2) == tuple(u1, u2)
+                        return true
+                    end
+                end
+            end
+            
+            push!(pairs, tuple(p1, p2))
+            push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
+        end
+
+        sort!(pairs, alg=QuickSort)
+
+        n = length(pairs)
+        for i=1:n-1
+            if pairs[i] == pairs[i+1]
+                return true
+            end
+        end
+
+        return false
+    end
+
 end
