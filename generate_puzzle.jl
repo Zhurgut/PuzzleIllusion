@@ -1,6 +1,6 @@
 using LinearAlgebra, Statistics
 using Combinatorics
-using BenchmarkTools
+import CSV, Tables
 
 struct Connection
     id::Int
@@ -29,6 +29,8 @@ function Piece(t::Integer, r::Integer, b::Integer, l::Integer)
     l2 = Connection(l)
     Piece(t2, r2, b2, l2)
 end
+
+to_tuple(p::Piece) = (p.top, p.right, p.bottom, p.left)
 
 function Base.show(io::IO, p::Piece)
     print(io, "Piece(l=$(p.left.id), t=$(p.top.id), b=$(p.bottom.id), r=$(p.right.id))")
@@ -569,7 +571,7 @@ function generate_puzzle(w, h, nr_trials=10000)
     
     println("total connections: $best_nr_cs")
     println("inner connections: $best_nr_inner_cs")
-    # println("nr_solutions: $(length(get_all_solutions(best_s1)))")
+    println("nr_solutions: $(length(get_all_solutions(best1)))")
     best1, best2
 
 end
@@ -577,8 +579,48 @@ end
 
 
 
-function save_permutation(puzzle, W=1024, H=1024)
+function save_permutation(puzzle, sol, F::Int=1)
+    h, w = size(puzzle)
+    S = 64*F
+    H, W = S*h, S*w
+    def_y = reshape(repeat(1:H, W), H, W)
+    def_x = transpose(reshape(repeat(1:W, H), W, H))
 
+    out_x = similar(def_x)
+    out_y = similar(def_y)
+
+    for c=1:w, r=1:h
+        piece = puzzle[r, c]
+        for c2=1:w, r2=1:h
+            piece2 = sol[r2, c2]
+            if piece == piece2
+                xl, xr = (c-1)*S+1, c*S
+                yl, yr = (r-1)*S+1, r*S
+                from_x = def_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
+                from_y = def_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
+
+                xl, xr = (c2-1)*S+1, c2*S
+                yl, yr = (r2-1)*S+1, r2*S
+                to_x = @view(out_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
+                to_y = @view(out_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
+
+                for r=0:3
+                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
+                        to_x .= rotr90(from_x, r)
+                        to_y .= rotr90(from_y, r)
+                        break
+                    end
+                end
+
+                break
+            end
+        end
+    end
+
+    CSV.write("perm_x.csv", Tables.table(out_x), writeheader=false)
+    CSV.write("perm_y.csv", Tables.table(out_y), writeheader=false)
+
+    out_x, out_y
 end
 
 function draw_puzzle(puzzle)
