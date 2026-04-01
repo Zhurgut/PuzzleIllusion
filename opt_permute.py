@@ -66,6 +66,7 @@ def optimize(
     permutex, permutey,
     num_inference_steps: int = 32,
     guidance_scale = 7.0,
+    weight1 = 0.5,
     hint_weight = 0.4,
     hint_until = 0.75, # for how long in the process to steer using the hint, as percentage
 ):
@@ -76,20 +77,12 @@ def optimize(
             prompt_2=prompt1,
             prompt_3=prompt1,
         )
-        prompt_embeds1 = prompt_embeds1
-        negative_prompt_embeds1 = negative_prompt_embeds1
-        pooled_prompt_embeds1 = pooled_prompt_embeds1
-        negative_pooled_prompt_embeds1 = negative_pooled_prompt_embeds1
 
         prompt_embeds2, negative_prompt_embeds2, pooled_prompt_embeds2, negative_pooled_prompt_embeds2 = pipeline.encode_prompt(
             prompt=prompt2,
             prompt_2=prompt2,
             prompt_3=prompt2,
         )
-        prompt_embeds2 = prompt_embeds2
-        negative_prompt_embeds2 = negative_prompt_embeds2
-        pooled_prompt_embeds2 = pooled_prompt_embeds2
-        negative_pooled_prompt_embeds2  = negative_pooled_prompt_embeds2
 
         height, width = permutex.shape
 
@@ -164,7 +157,7 @@ def optimize(
 
                 noise_pred2 = permute_latent(noise_pred2, invpermutex, invpermutey)
 
-                noise_pred = 0.5 * (noise_pred1 + noise_pred2)
+                noise_pred = weight1 * noise_pred1 + (1-weight1) * noise_pred2
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = pipeline.scheduler.step(noise_pred, t, latents, return_dict=False)[0]
@@ -196,27 +189,22 @@ def optimize(
 
 
 
-permutex = torch.zeros(256, 256, dtype=torch.long)
-permutey = torch.zeros(256, 256, dtype=torch.long)
-for i in range(128):
-    permutex[i, 0:128] = torch.arange(0, 128)
-    permutex[i+128, 0:128] = torch.arange(255, 127, -1)
-    permutex[i, 128:] = torch.arange(127, -1, -1)
-    permutex[i+128, 128:] = torch.arange(128, 256)
+datax = np.loadtxt("perm2_x.csv", delimiter=',')
+datay = np.loadtxt("perm2_y.csv", delimiter=',')
 
-    permutey[0:128, i] = torch.arange(0, 128)
-    permutey[128:, i] = torch.arange(127, -1, -1)
-    permutey[0:128, i+128] = torch.arange(255, 127, -1)
-    permutey[128:, i+128] = torch.arange(128, 256)
+permutex = torch.from_numpy(datax).long() - 1
+permutey = torch.from_numpy(datay).long() - 1
 
-
-imgs = optimize(
-    "an oil painting of a duck",
-    "an oil painting of a bunny",
-    permutex, 
-    permutey,
-    num_inference_steps=50
-)
-    
-for i in range(len(imgs)):
-    imgs[i].save(f"pout{i}.png")
+for attempt in range(10):
+    imgs = optimize(
+        "a charcoal sketch of a duck",
+        "a charcoal sketch of a bunny",
+        permutex, 
+        permutey,
+        num_inference_steps=50,
+        weight1 = 0.5,
+        guidance_scale=7.0,
+    )
+        
+    for i in range(len(imgs)):
+        imgs[i].save(f"out/img{attempt}_{i}.png")
