@@ -194,9 +194,9 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
         resize!(filling_perm, (w-2)*(h-2))
         rand_perm!(filling_perm)
         for (i, e) in enumerate(filling_perm)
-            in_r, in_c = (i-1) ÷ (h-2) + 1, (i-1) % (w-2) + 1
+            in_r, in_c = (i-1) ÷ (w-2) + 1, (i-1) % (w-2) + 1
             piece = sol1[in_r+1, in_c+1]
-            out_r, out_c = (e-1) ÷ (h-2) + 1, (e-1) % (w-2) + 1
+            out_r, out_c = (e-1) ÷ (w-2) + 1, (e-1) % (w-2) + 1
             
             success = false
             init_r = rand(1:4)
@@ -526,7 +526,26 @@ function nr_connections_inside(puzzle)
 end
 
 
-function generate_puzzle(w, h, nr_trials=10000)
+include("draw_puzzle.jl")
+
+function save_puzzle(sol1, sol2)
+    H, W = size(sol1)
+    nr_connectors = length(nr_connections(sol1))
+    connectors = [random_connector() for i in 1:nr_connectors]
+
+    draw_puzzles(sol1, sol2, "out/print", connectors)
+
+    save_permutation_with_round_knobs(sol1, sol2, connectors, floor(Int, sqrt(256 / (H*W))))
+
+    open("out/puzzle.txt", "w") do io
+        show(io, "text/plain", sol1)
+        println(io)
+        show(io, "text/plain", sol2)
+    end
+end
+
+function generate_puzzle(w, h, nr_trials=100000)
+
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
     random_puzzle!(sol1, sol2) # random puzzle with at least two solutions
@@ -552,6 +571,7 @@ function generate_puzzle(w, h, nr_trials=10000)
         stats = nr_connections(sol1)
         nr_cs, most_prominent = length(stats), stats[end] ÷ 2
         nr_inner_cs = nr_connections_inside(sol1)
+
         if nr_inner_cs > best_nr_inner_cs || 
                 nr_inner_cs == best_nr_inner_cs && nr_cs > best_nr_cs ||
                 nr_inner_cs == best_nr_inner_cs && nr_cs == best_nr_cs && most_prominent < best_most_prominent
@@ -564,7 +584,7 @@ function generate_puzzle(w, h, nr_trials=10000)
             println("$(nr_cs), $(nr_inner_cs), $(most_prominent)")
         end
 
-        # sols = get_all_solutions(sol1)
+        
 
         # println()
         # println("trial $t success, $(length(sols)) solutions")
@@ -576,12 +596,22 @@ function generate_puzzle(w, h, nr_trials=10000)
         # end
         # return sol1, sol2
     end
+
+    success, solutions = get_all_solutions(best1)
+    if success
+        println("SUCCESS: puzzle has exactly 2 solutions! :D")
+    else
+        println("FAIL: could not verify that the puzzle has only 2 solutions🤷") 
+        println("pieces are unique: ", pieces_are_unique(best1))
+        println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
+    end
     
-    println("pieces are unique: ", pieces_are_unique(best1))
-    println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
     println("total connections: $best_nr_cs")
     println("inner connections: $best_nr_inner_cs")
     println("nr_solutions: $(length(get_all_solutions(best1)))")
+
+    save_puzzle(best1, best2)
+
     best1, best2
 
 end
