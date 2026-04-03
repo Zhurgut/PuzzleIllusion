@@ -63,11 +63,10 @@ def permute_latent(latents, permutex, permutey):
 
 
 
-def optimize(
+def generate(
     prompt1: str,
     prompt2: str,
-    permutex, permutey,
-    num_inference_steps: int = 50,
+    num_inference_steps = 50,
     guidance_scale = 7.0,
     hint_weight = 0.6,
     hint_until = 0.94,
@@ -86,6 +85,11 @@ def optimize(
             prompt_2=prompt2,
             prompt_3=prompt2,
         )
+
+        datax = np.loadtxt("out/perm_x.csv", delimiter=',')
+        datay = np.loadtxt("out/perm_y.csv", delimiter=',')
+        permutex = torch.from_numpy(datax).long() - 1
+        permutey = torch.from_numpy(datay).long() - 1
 
         height, width = permutex.shape
 
@@ -153,34 +157,28 @@ def optimize(
 
         imgs = []
 
-        imgs.append(pipeline.image_processor.postprocess(dec1, output_type="pil")[0])
-        imgs.append(pipeline.image_processor.postprocess(dec2_invpermuted, output_type="pil")[0])
         imgs.append(pipeline.image_processor.postprocess(0.5 * (dec1 + dec2_invpermuted), output_type="pil")[0])
-
-        imgs.append(pipeline.image_processor.postprocess(dec2, output_type="pil")[0])
-        imgs.append(pipeline.image_processor.postprocess(dec1_permuted, output_type="pil")[0])
         imgs.append(pipeline.image_processor.postprocess(0.5 * (dec2 + dec1_permuted), output_type="pil")[0])
+
+        imgs.append(pipeline.image_processor.postprocess(dec1, output_type="pil")[0])
+        imgs.append(pipeline.image_processor.postprocess(dec2, output_type="pil")[0])
+
+        imgs.append(pipeline.image_processor.postprocess(dec2_invpermuted, output_type="pil")[0])
+        imgs.append(pipeline.image_processor.postprocess(dec1_permuted, output_type="pil")[0])
+        
 
         return imgs
 
 
 
-# datax = np.loadtxt("perm2_x.csv", delimiter=',')
-# datay = np.loadtxt("perm2_y.csv", delimiter=',')
 
-# permutex = torch.from_numpy(datax).long() - 1
-# permutey = torch.from_numpy(datay).long() - 1
+imgs = generate(
+    "a water color drawing of a duck",
+    "a water color drawing of a bunny",
+    # "abstract painting of the face of an old man with a beard",
+    # "abstract painting of the face of a beautiful young woman",
+    num_inference_steps=50,
+)
 
-# for attempt in range(10):
-#     imgs = optimize(
-#         # "a charcoal sketch of a duck",
-#         # "a charcoal sketch of a bunny",
-#         "abstract painting of the face of an old man with a beard",
-#         "abstract painting of the face of a beautiful young woman",
-#         permutex, 
-#         permutey,
-#         num_inference_steps=50,
-#     )
-        
-#     for i in range(len(imgs)):
-#         imgs[i].save(f"out/img{attempt}_{i}.png")
+for i in range(len(imgs)):
+    imgs[i].save(f"out/puzzle{i}.png")
