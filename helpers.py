@@ -4,6 +4,8 @@ import torchvision
 from transformers import T5EncoderModel, BitsAndBytesConfig
 from diffusers import StableDiffusion3Pipeline
 
+import math
+
 model_id = "stabilityai/stable-diffusion-3.5-medium"
 
 # 1. Define the quantization config for the T5 text encoder
@@ -75,6 +77,23 @@ def get_noise_pred(
         return noise_pred
 
 
+def encode_prompts(prompt, negative_prompt=""):
+    with torch.no_grad():
+        prompt_embeds = pipeline.encode_prompt(
+            prompt=prompt,
+            prompt_2=prompt,
+            prompt_3=prompt,
+            negative_prompt=negative_prompt,
+            negative_prompt_2=negative_prompt,
+            negative_prompt_3=negative_prompt,
+        )
+    
+    for p in prompt_embeds:
+        p.requires_grad_(False)
+    
+    return prompt_embeds
+
+
 def encode(pixels):
     img = pixels.to(torch.bfloat16).to("cuda")
     enc = pipeline.vae.encode(img).latent_dist.mean
@@ -87,7 +106,7 @@ def decode(latents):
     return dec
 
 def latents_roundtrip(latents, permutex, permutey):
-    dec = decode(latents, pipeline)
+    dec = decode(latents)
     permuted = dec[:, :, permutey, permutex]
     enc = pipeline.vae.encode(permuted).latent_dist.mean
     latents2 = (enc - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
@@ -96,7 +115,7 @@ def latents_roundtrip(latents, permutex, permutey):
 
 def latent_to_pil(latents):
     with torch.no_grad():
-        dec = decode(latents, pipeline)
+        dec = decode(latents)
         out = pipeline.image_processor.postprocess(dec, output_type="pil")[0]
         return out
 
@@ -124,3 +143,15 @@ def get_noise_pred2(latents, prompt_embeds, t, guidance_scale):
         noise_pred = noise_pred_uncond + guidance_scale * (noise_pred - noise_pred_uncond)
     
     return noise_pred
+
+def align_to_64(width, height):
+    if width % 64 == 0 and height % 64 == 0:
+        return width, height
+    
+    # if sizes are not aligned, make it as big as possible
+    max_scale_factor = math.sqrt(1024 * 1024 / (width * height))
+    nw = max_scale_factor * width
+    nh = max_scale_factor * height
+    nw = math.floor(nw) // 64 * 64
+    nh = math.floor(nh) // 64 * 64
+    return nw, nh
