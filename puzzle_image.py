@@ -4,6 +4,7 @@ import torch
 import torchvision
 import numpy as np
 import helpers
+import math
 
 model_id = "stabilityai/stable-diffusion-3.5-medium"
 
@@ -25,6 +26,7 @@ pipeline = StableDiffusion3Pipeline.from_pretrained(
     torch_dtype=torch.bfloat16
 )
 pipeline.enable_model_cpu_offload()
+
 
 
 
@@ -68,9 +70,6 @@ def generate(
     prompt2: str,
     num_inference_steps = 50,
     guidance_scale = 7.0,
-    hint_weight = 0.6,
-    hint_until = 0.94,
-    
 ):
     with torch.no_grad():
 
@@ -131,14 +130,25 @@ def generate(
 
                 hint_for_img1 = latents2 - s * noise_pred2
                 hint_for_img1 = helpers.latents_roundtrip(hint_for_img1, invpermutex, invpermutey, pipeline)
+
                 
+               
                 hint_noise_pred1 = (latents1 - hint_for_img1) / (s + 0.01)
                 hint_noise_pred2 = (latents2 - hint_for_img2) / (s + 0.01)
 
                 
-                w = 0 if (1-s) > hint_until else 0.5 * hint_weight * np.sqrt(map(1-s, 0, hint_until, 4, 0))
-                final_noise_pred1 = (1-w) * noise_pred1 + w * hint_noise_pred1
-                final_noise_pred2 = (1-w) * noise_pred2 + w * hint_noise_pred2
+                # w = 0 if (1-s) > hint_until else 0.5 * hint_weight * math.sqrt(map(1-s, 0, hint_until, 4, 0))
+                w = 0.5
+                # final_noise_pred1 = (1-w) * noise_pred1 + w * hint_noise_pred1
+                # final_noise_pred2 = (1-w) * noise_pred2 + w * hint_noise_pred2
+                dif1 = hint_noise_pred1 - noise_pred1
+                dif2 = hint_noise_pred2 - noise_pred2
+                # lf1 = torch.nn.functional.avg_pool2d(dif1, 3, stride=1, padding=1)
+                # lf2 = torch.nn.functional.avg_pool2d(dif2, 3, stride=1, padding=1)
+                lf1 = torchvision.transforms.functional.gaussian_blur(dif1, (5,5), sigma=0.5)
+                lf2 = torchvision.transforms.functional.gaussian_blur(dif2, (5,5), sigma=0.5)
+                final_noise_pred1 = noise_pred1 + w * lf1
+                final_noise_pred2 = noise_pred2 + w * lf2
 
                 latents1 = pipeline.scheduler.step(final_noise_pred1, t, latents1, return_dict=False)[0]
                 pipeline.scheduler._step_index -= 1
@@ -148,14 +158,13 @@ def generate(
                 if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
                     progress_bar.update()
 
+        imgs = []
 
         dec1 = helpers.decode(latents1, pipeline)
         dec2 = helpers.decode(latents2, pipeline)
 
         dec1_permuted = dec1[:, :, permutey, permutex]
         dec2_invpermuted = dec2[:, :, invpermutey, invpermutex]
-
-        imgs = []
 
         imgs.append(pipeline.image_processor.postprocess(0.5 * (dec1 + dec2_invpermuted), output_type="pil")[0])
         imgs.append(pipeline.image_processor.postprocess(0.5 * (dec2 + dec1_permuted), output_type="pil")[0])
@@ -171,14 +180,27 @@ def generate(
 
 
 
-
 imgs = generate(
-    "a water color drawing of a duck",
-    "a water color drawing of a bunny",
+    # "oil painting of a fantasy castle with lots of trees",
+    # "oil painting of a large fish, close up, swimming in an underwater landscape, with plants, algae and corals",
+    # "oil painting of a large fish, close up, swimming in an underwater landscape, with plants, algae and corals",
     # "abstract painting of the face of an old man with a beard",
     # "abstract painting of the face of a beautiful young woman",
+    # "watercolor painting of a duck",
+    # "watercolor painting of a bunny",
+    # "abstract painting of the face of an old man with a beard",
+    # "abstract painting of a woman's face, with prominent eyes and lips",
+    "a painting of houseplants in the style of studio ghibli",
+    "a painting of marilyn monroe in the style of studio ghibli",
     num_inference_steps=50,
 )
+
+# imgs = generate(
+#     "a water color drawing of a duck",
+#     "a water color drawing of a bunny",
+#     
+#     num_inference_steps=50,
+# )
 
 for i in range(len(imgs)):
     imgs[i].save(f"out/puzzle{i}.png")
