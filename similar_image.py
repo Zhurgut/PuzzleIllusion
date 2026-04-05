@@ -33,8 +33,8 @@ def generate(
     target_img_path, 
     num_inference_steps: int = 32,
     guidance_scale = 7.0,
-    hint_weight = 0.7,
-    hint_until = 0.6, # for how long in the process to steer using the hint, as percentage
+    hint_weight = 0.6,
+    hint_until = 0.75,
 ):
     
     with torch.no_grad():
@@ -97,13 +97,16 @@ def generate(
 
                 hint_noise_pred = (latents - hint_latents) / (s + 0.01)
 
+
                 if (1-s) < hint_until:
-                    w = s * hint_weight
+                    x = 1 - (1-s) / hint_until
+                    w_snr = x**2 / (x**2 + (1-x)**2)
+                    w = hint_weight * w_snr
                     final_noise_pred = w * hint_noise_pred + (1-w) * noise_pred
                 else:
                     final_noise_pred = noise_pred
-
-
+                
+                
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = pipeline.scheduler.step(final_noise_pred, t, latents, return_dict=False)[0]
                 
@@ -119,14 +122,15 @@ def generate(
 
             return [image]
 
+
 # for weight in [0.4, 0.5, 0.6, 0.7, 0.8]:
 #     for until in [0.4, 0.5, 0.6, 0.7, 0.8]:
 
 img = generate(
     "tropical island",
-    "goodies/donut.png",
-    hint_weight=0.65,
-    hint_until=0.55,
+    "goodies/donut512.png",
+    # hint_weight=0.65,
+    # hint_until=0.55,
     num_inference_steps=50
 )[0]
 
