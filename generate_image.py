@@ -1,30 +1,8 @@
-from diffusers import BitsAndBytesConfig, SD3Transformer2DModel
-from diffusers import StableDiffusion3Pipeline
+
 import torch
-import torchvision
-import numpy as np
-import inspect
 
-model_id = "stabilityai/stable-diffusion-3.5-medium"
-
-nf4_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16
-)
-model_nf4 = SD3Transformer2DModel.from_pretrained(
-    model_id,
-    subfolder="transformer",
-    quantization_config=nf4_config,
-    torch_dtype=torch.bfloat16
-)
-
-pipeline = StableDiffusion3Pipeline.from_pretrained(
-    model_id, 
-    transformer=model_nf4,
-    torch_dtype=torch.bfloat16
-)
-pipeline.enable_model_cpu_offload()
+import helpers
+pipeline = helpers.pipeline
 
 
 def optimize(
@@ -106,7 +84,7 @@ def optimize(
 
 for i in range(10):
     img = optimize(
-        "japanese anime style rendition of marilyn monroe",
+        "forest in the style of studio ghibli, anime style",
         512, 512
     )
 
