@@ -31,7 +31,7 @@ def optimize(
     prompt: str,
     height: int = pipeline.default_sample_size * pipeline.vae_scale_factor,
     width: int = pipeline.default_sample_size * pipeline.vae_scale_factor,
-    num_inference_steps: int = 32,
+    num_inference_steps: int = 50,
     guidance_scale = 7.0
 ):
     with torch.no_grad():
@@ -104,10 +104,10 @@ def optimize(
         return image
 
 
+for i in range(10):
+    img = optimize(
+        "japanese anime style rendition of marilyn monroe",
+        512, 512
+    )
 
-# img = optimize(
-#     "delicious chocolate donut in the ocean",
-#     256, 256
-# )
-
-# img.save("out.png")
+    img.save("out/image.png")
