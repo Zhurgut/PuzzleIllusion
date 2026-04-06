@@ -6,12 +6,12 @@ pipeline = helpers.pipeline
 
 
 def optimize(
-    latents, prompt_embeds, num_inference_steps, guidance_scale, begin_index=0, nr_steps=None
+    latents, prompt_embeds, num_inference_steps, guidance_scale, begin_index=0
 ):
 
     helpers.prepare_scheduler(num_inference_steps, begin_index)
 
-    nr_steps_to_take = num_inference_steps - begin_index if nr_steps is None else min(nr_steps, num_inference_steps - begin_index)
+    nr_steps_to_take = num_inference_steps - begin_index
     assert begin_index + nr_steps_to_take <= num_inference_steps
 
     # 7. Denoising loop
@@ -20,7 +20,7 @@ def optimize(
 
             t = pipeline.scheduler.timesteps[i:i+1]
 
-            noise_pred = helpers.get_noise_pred2(latents, prompt_embeds, t, guidance_scale)
+            noise_pred = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
 
             # compute the previous noisy sample x_t -> x_t-1
             # x_t = (1-t)*x_0 + t*epsilon
@@ -30,10 +30,8 @@ def optimize(
             if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
                 progress_bar.update()
 
-    if begin_index + nr_steps_to_take == num_inference_steps:
-        return latents, None
-    else:
-        return latents, begin_index + nr_steps_to_take
+    return latents
+
     
 
 def generate(
@@ -70,8 +68,8 @@ def generate(
 # for i in range(10):
 # img = generate(
 #     "forest in the style of studio ghibli, anime style",
-#     512, 512,
-#     num_inference_steps=10,
+#     1024, 1024,
+#     num_inference_steps=20,
 # )
 
 # img.save("out/image.png")
