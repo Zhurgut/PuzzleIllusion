@@ -110,6 +110,60 @@ function draw_puzzles(puzzle, puzzle2, out_name, connectors, out_type=PDF)
     save(out_type(out_name * "2"), picture)
 end
 
+
+
+function save_permutation(puzzle, sol, F::Int=1)
+    h, w = size(puzzle)
+    S = 64*F
+    H, W = S*h, S*w
+    def_y = reshape(repeat(1:H, W), H, W)
+    def_x = transpose(reshape(repeat(1:W, H), W, H))
+
+    out_x = similar(def_x)
+    out_y = similar(def_y)
+
+    for c=1:w, r=1:h
+        piece = puzzle[r, c]
+        for c2=1:w, r2=1:h
+            piece2 = sol[r2, c2]
+            if piece == piece2
+                xl, xr = (c-1)*S+1, c*S
+                yl, yr = (r-1)*S+1, r*S
+                from_x = def_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
+                from_y = def_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
+
+                xl, xr = (c2-1)*S+1, c2*S
+                yl, yr = (r2-1)*S+1, r2*S
+                to_x = @view(out_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
+                to_y = @view(out_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
+
+                for r=0:3
+                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
+                        to_x .= rotr90(from_x, r)
+                        to_y .= rotr90(from_y, r)
+                        break
+                    end
+                end
+
+                break
+            end
+        end
+    end
+
+    CSV.write("out/perm_x.csv", Tables.table(out_x), writeheader=false)
+    CSV.write("out/perm_y.csv", Tables.table(out_y), writeheader=false)
+
+    out_x, out_y
+end
+
+
+# returns a matrix filled with indeces, each index corresponds to one puzzle piece, e.g.
+# [1 1 1 3 3 3]
+# [1 1 3 3 3 3]
+# [1 1 1 3 4 3]
+# [2 1 2 4 4 4]
+# [2 2 2 2 4 4]
+# [2 2 2 4 4 4]
 function get_piece_map(puzzle, S, splines)
     h, w = size(puzzle)
     piece_index = reshape(1:h*w, h, w)
@@ -207,137 +261,6 @@ function get_piece_map(puzzle, S, splines)
 end
 
 
-function save_permutation(puzzle, sol, F::Int=1)
-    h, w = size(puzzle)
-    S = 64*F
-    H, W = S*h, S*w
-    def_y = reshape(repeat(1:H, W), H, W)
-    def_x = transpose(reshape(repeat(1:W, H), W, H))
-
-    out_x = similar(def_x)
-    out_y = similar(def_y)
-
-    for c=1:w, r=1:h
-        piece = puzzle[r, c]
-        for c2=1:w, r2=1:h
-            piece2 = sol[r2, c2]
-            if piece == piece2
-                xl, xr = (c-1)*S+1, c*S
-                yl, yr = (r-1)*S+1, r*S
-                from_x = def_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
-                from_y = def_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
-
-                xl, xr = (c2-1)*S+1, c2*S
-                yl, yr = (r2-1)*S+1, r2*S
-                to_x = @view(out_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
-                to_y = @view(out_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
-
-                for r=0:3
-                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
-                        to_x .= rotr90(from_x, r)
-                        to_y .= rotr90(from_y, r)
-                        break
-                    end
-                end
-
-                break
-            end
-        end
-    end
-
-    CSV.write("perm_x.csv", Tables.table(out_x), writeheader=false)
-    CSV.write("perm_y.csv", Tables.table(out_y), writeheader=false)
-
-    out_x, out_y
-end
-
-
-
-function save_permutation_with_knobs(puzzle, sol, F::Int=1)
-    h, w = size(puzzle)
-    S = 64*F
-    H, W = S*h, S*w
-    def_y = reshape(repeat(1:H, W), H, W)
-    def_x = transpose(reshape(repeat(1:W, H), W, H))
-
-    out_x = similar(def_x)
-    out_y = similar(def_y)
-
-    piece_index_array = fill(false, 3 * S ÷ 2, 3 * S ÷ 2)
-    piece_array_x = fill(0, 3 * S ÷ 2, 3 * S ÷ 2)
-    piece_array_y = fill(0, 3 * S ÷ 2, 3 * S ÷ 2)
-
-    for c=1:w, r=1:h
-        piece = puzzle[r, c]
-        
-        piece_index_array .= false
-        piece_index_array[(S ÷ 4 + 1):(S ÷ 4 + S), (S ÷ 4 + 1):(S ÷ 4 + S)] .= true
-        if piece.top.id > 0
-            piece_index_array[1:S÷4, 5S÷8+1:7S÷8] .= true
-        elseif piece.top.id < 0
-            piece_index_array[S÷4+1:S÷2, 5S÷8+1:7S÷8] .= false
-        end
-
-        if piece.right.id > 0
-            piece_index_array[5S÷8+1:7S÷8, 5S÷4+1:end] .= true
-        elseif piece.right.id < 0
-            piece_index_array[5S÷8+1:7S÷8, S+1:5S÷4] .= false
-        end
-
-        if piece.bottom.id > 0
-            piece_index_array[5S÷4+1:end, 5S÷8+1:7S÷8] .= true
-        elseif piece.bottom.id < 0
-            piece_index_array[S+1:5S÷4, 5S÷8+1:7S÷8] .= false
-        end
-
-        if piece.left.id > 0
-            piece_index_array[5S÷8+1:7S÷8, 1:S÷4] .= true
-        elseif piece.left.id < 0
-            piece_index_array[5S÷8+1:7S÷8, S÷4+1:S÷2] .= false
-        end
-        
-        for pc=1:(3 * S ÷ 2), pr=1:(3 * S ÷ 2)
-            zc, zr = pc - S ÷ 4 + (c-1)*S, pr - S ÷ 4 + (r-1)*S
-            if piece_index_array[pr, pc]
-                piece_array_x[pr, pc] = def_x[zr, zc]
-                piece_array_y[pr, pc] = def_y[zr, zc]
-            end
-        end
-
-        for c2=1:w, r2=1:h
-            piece2 = sol[r2, c2]
-
-            if piece == piece2
-
-                for r=0:3
-                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
-                        piece_index_array = rotr90(piece_index_array, r)
-                        piece_array_x = rotr90(piece_array_x, r)
-                        piece_array_y = rotr90(piece_array_y, r)
-
-                        for pc=1:(3 * S ÷ 2), pr=1:(3 * S ÷ 2)
-                            zc, zr = pc - S ÷ 4 + (c2-1)*S, pr - S ÷ 4 + (r2-1)*S
-                            if piece_index_array[pr, pc]
-                                out_x[zr, zc] = piece_array_x[pr, pc]
-                                out_y[zr, zc] = piece_array_y[pr, pc]
-                            end
-                        end
-                        break
-                    end
-                end
-
-                break
-            end
-        end
-    end
-
-    CSV.write("perm_x.csv", Tables.table(out_x), writeheader=false)
-    CSV.write("perm_y.csv", Tables.table(out_y), writeheader=false)
-
-    out_x, out_y
-end
-
-
 
 function save_permutation_with_round_knobs(puzzle, sol, connectors, F::Int=1)
     h, w = size(puzzle)
@@ -398,8 +321,8 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, F::Int=1)
         end
     end
 
-    CSV.write("perm2_x.csv", Tables.table(out_x), writeheader=false)
-    CSV.write("perm2_y.csv", Tables.table(out_y), writeheader=false)
+    CSV.write("out/perm_x.csv", Tables.table(out_x), writeheader=false)
+    CSV.write("out/perm_y.csv", Tables.table(out_y), writeheader=false)
 
     out_x, out_y
 end
