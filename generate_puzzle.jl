@@ -528,14 +528,18 @@ end
 
 include("draw_puzzle.jl")
 
-function save_puzzle(sol1, sol2)
+function save_puzzle(sol1, sol2, F=nothing)
     H, W = size(sol1)
     nr_connectors = length(nr_connections(sol1))
     connectors = [random_connector() for i in 1:nr_connectors]
 
     draw_puzzles(sol1, sol2, "out/print", connectors)
 
-    save_permutation_with_round_knobs(sol1, sol2, connectors, floor(Int, sqrt(256 / (H*W))))
+    if isnothing(F)
+        save_permutation_with_round_knobs(sol1, sol2, connectors, floor(Int, sqrt(256 / (H*W))))
+    else
+        save_permutation_with_round_knobs(sol1, sol2, connectors, F)
+    end
 
     open("out/puzzle.txt", "w") do io
         show(io, "text/plain", sol1)
@@ -544,7 +548,7 @@ function save_puzzle(sol1, sol2)
     end
 end
 
-function generate_puzzle(w, h, nr_trials=100000)
+function generate_puzzle(w, h, nr_trials=100000; F=nothing)
 
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
@@ -602,6 +606,7 @@ function generate_puzzle(w, h, nr_trials=100000)
         println("SUCCESS: puzzle has exactly 2 solutions! :D")
     else
         println("FAIL: could not verify that the puzzle has only 2 solutions🤷") 
+        println("$(length(solutions)) solutions were found in the given time.")
         println("pieces are unique: ", pieces_are_unique(best1))
         println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
     end
@@ -610,7 +615,7 @@ function generate_puzzle(w, h, nr_trials=100000)
     println("inner connections: $best_nr_inner_cs")
     println("nr_solutions: $(length(get_all_solutions(best1)))")
 
-    save_puzzle(best1, best2)
+    save_puzzle(best1, best2, F)
 
     best1, best2
 
