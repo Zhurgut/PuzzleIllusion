@@ -28,53 +28,7 @@ pipeline = StableDiffusion3Pipeline.from_pretrained(
     torch_dtype=torch.bfloat16,
 )
 
-# Optional: Further memory safety for 16GB cards
 pipeline.enable_model_cpu_offload()
-
-
-def get_noise_pred(
-        prompt, 
-        latents,
-        time,
-        guidance_scale=7,
-):
-    with torch.no_grad():
-
-        prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds = pipeline.encode_prompt(
-            prompt=prompt,
-            prompt_2=prompt,
-            prompt_3=prompt,
-        )
-
-        pipeline.scheduler.set_timesteps(500)
-        pipeline.scheduler.set_begin_index(0)
-        i = round(time*499)
-
-        t = pipeline.scheduler.timesteps[i:i+1]
-        s = pipeline.scheduler.sigmas[i]
-
-
-        noise_pred = pipeline.transformer(
-            hidden_states=latents,
-            timestep=t.to("cuda"),
-            encoder_hidden_states=prompt_embeds,
-            pooled_projections=pooled_prompt_embeds,
-            return_dict=False,
-        )[0]
-
-        # perform guidance
-        if guidance_scale > 1:
-            noise_pred_uncond = pipeline.transformer(
-                hidden_states=latents,
-                timestep=t.to("cuda"),
-                encoder_hidden_states=negative_prompt_embeds,
-                pooled_projections=negative_pooled_prompt_embeds,
-                return_dict=False,
-            )[0]
-
-            noise_pred = noise_pred_uncond + guidance_scale * (noise_pred - noise_pred_uncond)
-        
-        return noise_pred
 
 
 def encode_prompts(prompt, negative_prompt=""):
@@ -100,6 +54,11 @@ def encode(pixels):
     latent = (enc - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
     return latent
 
+def encode2(decoded):
+    enc = pipeline.vae.encode(decoded).latent_dist.mean
+    latents = (enc - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
+    return latents
+
 def decode(latents):
     latent_unscaled = (latents / pipeline.vae.config.scaling_factor) + pipeline.vae.config.shift_factor
     dec = pipeline.vae.decode(latent_unscaled, return_dict=False)[0]
@@ -119,8 +78,14 @@ def latent_to_pil(latents):
         return out
 
 
-def get_noise_pred2(latents, prompt_embeds, t, guidance_scale):
-    prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds = prompt_embeds
+def get_noise_pred(latents, all_prompt_embeds, t, guidance_scale):
+    (prompt_embeds, 
+     negative_prompt_embeds, 
+     pooled_prompt_embeds, 
+     negative_pooled_prompt_embeds) = all_prompt_embeds
+
+    # batch sizes must match
+    assert latents.shape[0] == prompt_embeds.shape[0]
 
     noise_pred = pipeline.transformer(
         hidden_states=latents,
