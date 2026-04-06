@@ -112,7 +112,6 @@ def latents_roundtrip(latents, permutex, permutey):
     latents2 = (enc - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
     return latents2
 
-
 def latent_to_pil(latents):
     with torch.no_grad():
         dec = decode(latents)
@@ -155,3 +154,7 @@ def align_to_64(width, height):
     nw = math.floor(nw) // 64 * 64
     nh = math.floor(nh) // 64 * 64
     return nw, nh
+
+def prepare_scheduler(num_inference_steps, next_index):
+    pipeline.scheduler.set_timesteps(num_inference_steps)
+    pipeline.scheduler.set_begin_index(next_index)
