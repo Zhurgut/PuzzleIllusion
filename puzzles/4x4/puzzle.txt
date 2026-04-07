@@ -1,0 +1,10 @@
+4×4 Matrix{Piece}:
+ Piece(l=0, t=0, b=1, r=-2)    Piece(l=2, t=0, b=-9, r=-1)  Piece(l=1, t=0, b=10, r=-2)     Piece(l=2, t=0, b=-3, r=0)
+ Piece(l=0, t=-1, b=-4, r=-6)  Piece(l=6, t=9, b=9, r=10)   Piece(l=-10, t=-10, b=-8, r=7)  Piece(l=-7, t=3, b=-3, r=0)
+ Piece(l=0, t=4, b=-4, r=8)    Piece(l=-8, t=-9, b=6, r=7)  Piece(l=-7, t=8, b=5, r=5)      Piece(l=-5, t=3, b=4, r=0)
+ Piece(l=0, t=4, b=0, r=3)     Piece(l=-3, t=-6, b=0, r=2)  Piece(l=-2, t=-5, b=0, r=1)     Piece(l=-1, t=-4, b=0, r=0)
+4×4 Matrix{Piece}:
+ Piece(l=0, t=0, b=-4, r=-1)  Piece(l=1, t=0, b=10, r=-2)     Piece(l=2, t=0, b=-9, r=-1)   Piece(l=1, t=0, b=-2, r=0)
+ Piece(l=0, t=4, b=-4, r=8)   Piece(l=-8, t=-10, b=7, r=-10)  Piece(l=10, t=9, b=9, r=6)    Piece(l=-6, t=2, b=-3, r=0)
+ Piece(l=0, t=4, b=3, r=-5)   Piece(l=5, t=-7, b=5, r=8)      Piece(l=-8, t=-9, b=6, r=7)   Piece(l=-7, t=3, b=-3, r=0)
+ Piece(l=0, t=-3, b=0, r=2)   Piece(l=-2, t=-5, b=0, r=1)     Piece(l=-1, t=-6, b=0, r=-4)  Piece(l=4, t=3, b=0, r=0)
