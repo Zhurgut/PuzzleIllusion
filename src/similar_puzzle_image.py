@@ -1,32 +1,9 @@
-from diffusers import BitsAndBytesConfig, SD3Transformer2DModel
-from diffusers import StableDiffusion3Pipeline
 import torch
 import torchvision
 import numpy as np
 import helpers
-
-model_id = "stabilityai/stable-diffusion-3.5-medium"
-
-nf4_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16
-)
-model_nf4 = SD3Transformer2DModel.from_pretrained(
-    model_id,
-    subfolder="transformer",
-    quantization_config=nf4_config,
-    torch_dtype=torch.bfloat16
-)
-
-pipeline = StableDiffusion3Pipeline.from_pretrained(
-    model_id, 
-    transformer=model_nf4,
-    torch_dtype=torch.bfloat16
-)
-pipeline.enable_model_cpu_offload()
-
-
+import os
+pipeline = helpers.pipeline
 
 
 
@@ -64,33 +41,33 @@ def permute_latent(latents, permutex, permutey):
 
 
 def generate(
+    puzzle_w, puzzle_h,
     prompt: str,
     target_img_path, 
     num_inference_steps = 50,
     guidance_scale = 7.0,
     hint_weight = 0.7,
     hint_until = 0.6, # for how long in the process to steer using the hint, as percentage
+    negative_prompt="",
     
 ):
     with torch.no_grad():
 
-        prompt_embeds = pipeline.encode_prompt(
-            prompt=prompt,
-            prompt_2=prompt,
-            prompt_3=prompt,
-        )
+        prompt_embeds = helpers.encode_prompts(prompt, negative_prompt)
 
-        datax = np.loadtxt("out/perm_x.csv", delimiter=',')
-        datay = np.loadtxt("out/perm_y.csv", delimiter=',')
-        permutex = torch.from_numpy(datax).long() - 1
-        permutey = torch.from_numpy(datay).long() - 1
+        puzzle_path = os.path.join(os.path.dirname(__file__), f"../puzzles/{puzzle_w}x{puzzle_h}")
+
+        datax = np.loadtxt(os.path.join(puzzle_path, "perm_x.csv"), delimiter=',')
+        datay = np.loadtxt(os.path.join(puzzle_path, "perm_y.csv"), delimiter=',')
+        permutex = (torch.from_numpy(datax) - datax.min()).long()
+        permutey = (torch.from_numpy(datay) - datay.min()).long()
 
         height, width = permutex.shape
 
         hint_img = torchvision.io.read_image(target_img_path) * (1/255)
         pixels = pipeline.image_processor.preprocess(hint_img, height, width)
         permuted_pixels = pixels[:, :, permutey, permutex]
-        hint_latents = helpers.encode(permuted_pixels, pipeline)
+        hint_latents = helpers.encode(permuted_pixels)
 
         # 4. Prepare latent variables
         num_channels_latents = pipeline.transformer.config.in_channels
@@ -117,7 +94,7 @@ def generate(
                 t = pipeline.scheduler.timesteps[i:i+1]
                 s = pipeline.scheduler.sigmas[i]
 
-                noise_pred = helpers.get_noise_pred2(latents, prompt_embeds, t, pipeline, guidance_scale)
+                noise_pred = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
                 
                 hint_noise_pred = (latents - hint_latents) / (s + 0.01)
 
@@ -135,7 +112,7 @@ def generate(
                     progress_bar.update()
 
 
-        dec1 = helpers.decode(latents, pipeline)
+        dec1 = helpers.decode(latents)
         dec1_permuted = dec1[:, :, invpermutey, invpermutex]
 
         imgs = []
@@ -148,13 +125,13 @@ def generate(
 
 
 
-imgs = generate(
-    "colorful sports cars driving through tokyo",
-    "data/guitars.png",
-    num_inference_steps=80,
-    hint_weight=0.7,
-    hint_until=0.65
-)
+# imgs = generate(
+#     "colorful sports cars driving through tokyo",
+#     "data/guitars.png",
+#     num_inference_steps=80,
+#     hint_weight=0.7,
+#     hint_until=0.65
+# )
 
 # imgs = generate(
 #     "A campsite with a bunch of RVs in the forest",
@@ -165,13 +142,19 @@ imgs = generate(
 # )
 
 
-# imgs = generate(
-#     "a rock formation in the alps, among small pine trees and bushes",
-#     "goodies/matt.png",
-#     num_inference_steps=100,
-#     hint_weight=0.8,
-#     hint_until=0.65
-# )
+imgs = generate(
+    10,10,
+    # "a rock formation in the alps, among small pine trees and bushes, birds flying in the air. there is a little hut",
+    # "assets/matt.png",
+    "a village of small mud houses set on a gray rocky cliff. There are dried out bushes and grass, and some red alien plants. ",
+    "../assets/steve.png",
+    num_inference_steps=50,
+    hint_weight=1.0,
+    hint_until=0.7,
+    negative_prompt="pixel art"
+)
+
+out_path = puzzle_path = os.path.join(os.path.dirname(__file__), f"../out")
 
 for i in range(len(imgs)):
-    imgs[i].save(f"out/similar_puzzle{i}.png")
+    imgs[i].save(os.path.join(out_path, f"similar_puzzle{i}.png"))
