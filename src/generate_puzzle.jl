@@ -30,6 +30,8 @@ function Piece(t::Integer, r::Integer, b::Integer, l::Integer)
     Piece(t2, r2, b2, l2)
 end
 
+Piece(;l=0,b=0,r=0,t=0) = Piece(t,r,b,l)
+
 to_tuple(p::Piece) = (p.top, p.right, p.bottom, p.left)
 
 function Base.show(io::IO, p::Piece)
@@ -75,9 +77,9 @@ let perm::Vector{Int} = collect(1:10)
 
         # set the corners in corner positions
         c = if rand() < 0.5
-            (corners[2], corners[4], corners[1], corners[3])
+            (corners[3], corners[1], corners[4], corners[2])
         else
-            (corners[4], corners[3], corners[1], corners[2])
+            (corners[3], corners[4], corners[2], corners[1])
         end
 
         for (i, ci) in enumerate(c)
@@ -214,6 +216,8 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
             end
         end
 
+        @assert out[end, end] == sol1[1, 1]
+
         nothing
     end
 end
@@ -230,9 +234,11 @@ let map::Vector{Int} = zeros(Int, 1024)
                 break
             end
 
+            crt_id = rand([-1, 1]) * connection_id
+
             start = findfirst(graph) |> Tuple
-            map[start[1]] = connection_id
-            map[start[2]] = -connection_id
+            map[start[1]] = crt_id
+            map[start[2]] = -crt_id
 
             graph[start[1], start[2]] = graph[start[2], start[1]] = false
             next_row = findfirst(@view graph[:, start[2]])
@@ -246,8 +252,8 @@ let map::Vector{Int} = zeros(Int, 1024)
                 next_col = findfirst(@view graph[crt[1], :])
 
                 crt = crt[1], next_col
-                map[crt[1]] = connection_id
-                map[crt[2]] = -connection_id
+                map[crt[1]] = crt_id
+                map[crt[2]] = -crt_id
 
                 graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
                 next_row = findfirst(@view graph[:, crt[2]])
@@ -533,22 +539,25 @@ function save_puzzle(sol1, sol2, F=nothing)
     nr_connectors = length(nr_connections(sol1))
     connectors = [random_connector() for i in 1:nr_connectors]
 
-    draw_puzzles(sol1, sol2, "out/print", connectors)
+    out_folder = joinpath(@__DIR__, "..", "puzzles", "$(W)x$(H)")
+    mkpath(out_folder)
+
+    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors)
 
     if isnothing(F)
-        save_permutation_with_round_knobs(sol1, sol2, connectors, floor(Int, sqrt(256 / (H*W))))
+        save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, floor(Int, sqrt(256 / (H*W))))
     else
-        save_permutation_with_round_knobs(sol1, sol2, connectors, F)
+        save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, F)
     end
 
-    open("out/puzzle.txt", "w") do io
+    open(joinpath(out_folder, "puzzle.txt"), "w") do io
         show(io, "text/plain", sol1)
         println(io)
         show(io, "text/plain", sol2)
-    end
+    end 
 end
 
-function generate_puzzle(w, h, nr_trials=100000; F=nothing)
+function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=30)
 
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
@@ -558,7 +567,14 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing)
     best1, best2, best_nr_inner_cs, best_nr_cs, best_most_prominent = (sol1, sol2, nr_connections_inside(sol1), length(nr_connections(sol1)), 10000)
     sols = []
 
+    start_time = time()
+
     for t = 1:nr_trials
+        if time() - start_time > 60
+            start_time = time()
+            println("$t / $nr_trials")
+        end
+
         random_puzzle!(sol1, sol2) # random puzzle with at least two solutions
         resolve_connections!(sol1, sol2) # use as many different connectors as possible
 
@@ -587,21 +603,10 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing)
 
             println("$(nr_cs), $(nr_inner_cs), $(most_prominent)")
         end
-
         
-
-        # println()
-        # println("trial $t success, $(length(sols)) solutions")
-
-        
-
-        # if length(sols) > 100
-        #     return sol1, sol2
-        # end
-        # return sol1, sol2
     end
 
-    success, solutions = get_all_solutions(best1)
+    success, solutions = get_all_solutions(best1, max_time_for_solve)
     if success
         println("SUCCESS: puzzle has exactly 2 solutions! :D")
     else
@@ -611,9 +616,8 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing)
         println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
     end
     
-    println("total connections: $best_nr_cs")
-    println("inner connections: $best_nr_inner_cs")
-    println("nr_solutions: $(length(get_all_solutions(best1)))")
+    println("total nr distinct connectors: $best_nr_cs")
+    println("nr distinct inner connections: $best_nr_inner_cs")
 
     save_puzzle(best1, best2, F)
 

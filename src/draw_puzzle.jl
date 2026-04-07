@@ -3,14 +3,15 @@ using Dierckx, Plots, PicturaShapes, TikzPictures
 point(angle) = cos(angle), sin(angle)
 
 function get_connector(angles)
+    vertical_off = -0.02
     centers = [
-        (0.3, 0),
-        (0.4, 0.075),
-        (0.375, 0.2),
-        (0.5, 0.275),
-        (0.625, 0.2),
-        (0.6, 0.075),
-        (0.7, 0)
+        (0.25, 0),
+        (0.4, 0.075 + vertical_off),
+        (0.375, 0.2 + vertical_off),
+        (0.5, 0.275 + vertical_off),
+        (0.625, 0.2 + vertical_off),
+        (0.6, 0.075 + vertical_off),
+        (0.75, 0)
     ]
 
     radius = 0.025
@@ -98,9 +99,10 @@ function draw_puzzle(puzzle, draw_points)
 end
 
 # out_type can also be SVG, TEX or TIKZ
-function draw_puzzles(puzzle, puzzle2, out_name, connectors, out_type=PDF)
+function draw_puzzles(puzzle, puzzle2, out_name::String, connectors, out_type=PDF)
+    # mirror connectors here, because later we are going to do yscale=-1, which is going to mirror them back
     draw_points = [
-        [Point(p[1], p[2]) for p in connector.(0:0.01:1)] for connector in connectors
+        [Point(1 - p[1], p[2]) for p in connector.(0:0.01:1)] for connector in connectors
     ]
 
     picture = draw_puzzle(puzzle, draw_points)
@@ -262,7 +264,7 @@ end
 
 
 
-function save_permutation_with_round_knobs(puzzle, sol, connectors, F::Int=1)
+function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, F::Int=1)
     h, w = size(puzzle)
     S = 64*F
     H, W = S*h, S*w
@@ -321,8 +323,8 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, F::Int=1)
         end
     end
 
-    CSV.write("out/perm_x.csv", Tables.table(out_x), writeheader=false)
-    CSV.write("out/perm_y.csv", Tables.table(out_y), writeheader=false)
+    CSV.write(joinpath(out_folder, "perm_x.csv"), Tables.table(out_x), writeheader=false)
+    CSV.write(joinpath(out_folder, "perm_y.csv"), Tables.table(out_y), writeheader=false)
 
     out_x, out_y
 end
