@@ -545,7 +545,16 @@ function save_puzzle(sol1, sol2, F=nothing)
     draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors)
 
     if isnothing(F)
-        save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, floor(Int, sqrt(256 / (H*W))))
+        ub = sqrt(256 / (H*W))
+        M = min(H, W)
+        candidates = [fm for fm in floor(Int, ub*M):-1:1]
+        for c in candidates
+            f = c / M
+            if isinteger(f*W) && isinteger(f*H) && isinteger(f*64)
+                save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, f)
+                break
+            end
+        end
     else
         save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, F)
     end
@@ -557,7 +566,7 @@ function save_puzzle(sol1, sol2, F=nothing)
     end 
 end
 
-function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=30)
+function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=30, save=true, check=true)
 
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
@@ -606,24 +615,25 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=3
         
     end
 
-    success, solutions = get_all_solutions(best1, max_time_for_solve)
-    if success
-        println("SUCCESS: puzzle has exactly 2 solutions! :D")
-    else
-        println("FAIL: could not verify that the puzzle has only 2 solutions🤷") 
-        println("$(length(solutions)) solutions were found in the given time.")
-        println("pieces are unique: ", pieces_are_unique(best1))
-        println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
+    if check
+        success, solutions = get_all_solutions(best1, max_time_for_solve)
+        if success
+            println("SUCCESS: puzzle has exactly 2 solutions! :D")
+        else
+            println("FAIL: could not verify that the puzzle has only 2 solutions🤷") 
+            println("$(length(solutions)) solutions were found in the given time.")
+            println("pieces are unique: ", pieces_are_unique(best1))
+            println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
+        end
     end
     
     println("total nr distinct connectors: $best_nr_cs")
     println("nr distinct inner connections: $best_nr_inner_cs")
 
-    save_puzzle(best1, best2, F)
-
+    if save
+        save_puzzle(best1, best2, F)
+    end
+    
     best1, best2
 
 end
-
-
-
