@@ -2,42 +2,65 @@ using Dierckx, Plots, PicturaShapes, TikzPictures
 
 point(angle) = cos(angle), sin(angle)
 
-function get_connector(angles)
-    vertical_off = -0.02
-    centers = [
-        (0.25, 0),
-        (0.4, 0.075 + vertical_off),
-        (0.375, 0.2 + vertical_off),
-        (0.5, 0.275 + vertical_off),
-        (0.625, 0.2 + vertical_off),
-        (0.6, 0.075 + vertical_off),
-        (0.75, 0)
+# define some points which a parametric spline will go through to create a knobly bit
+function random_connector(;
+    max_vertical_offset = 0.04,
+    min_vertical_offset = 0.005,
+    outer_slide = 0.05,
+    radius = 0.025,
+)
+    
+    vertical_off1 = min_vertical_offset + (max_vertical_offset-min_vertical_offset) * rand()
+    vertical_off2 = min_vertical_offset + (max_vertical_offset-min_vertical_offset) * rand()
+
+    # map x ∈ [a, b] to [A, B]
+    map(x, a, b, A, B) = (x - a) * (B - A) / (b - a) + A
+
+    # points between the piece corner and the knob
+    outer_points = [
+        (0.25 + map(rand(), 0, 1, -outer_slide, +outer_slide),  -vertical_off1),
+        (0.75 + map(rand(), 0, 1, -outer_slide, +outer_slide),  -vertical_off2)
     ]
 
-    radius = 0.025
+    # The spline will go through a random point on the circle with center 
+    # at the points and radius
+    knob_points = [
+        (0.407,   0.075 - vertical_off1),
+        (0.375, 0.2   - vertical_off1),
+        (0.5,   0.275 - vertical_off1),
+        (0.625, 0.2   - vertical_off2),
+        (0.593,   0.075 - vertical_off2),
+    ]
 
     points = zeros(2, 11)
     points[:, 1] .= (0,0)
-    points[:, 2] .= (0.01,0)
-    for (i, c) in enumerate(centers)
-        points[:, i+2] .= c .+ radius .* point(angles[i])
+    # points[:, 2] .= (0.01, map(0.01, 0, outer_points[1][1], 0, -vertical_off1))
+    points[:, 2] .= (0.01, 0)
+    points[:, 3] .= outer_points[1]
+    for (i, c) in enumerate(knob_points)
+        if i ∈ [4, 8]
+            # a bit of tighter radius around the neck of the knob
+            points[:, i+3] .= c .+ 0.7radius .* point(2π * rand())
+        else
+            points[:, i+3] .= c .+ radius .* point(2π * rand())
+        end
     end
-    points[:, end-1] .= (0.99,0)
+    points[:, end-2] .= outer_points[2]
+    # points[:, end-1] .= (0.99, map(0.99, outer_points[2][1], 1, -vertical_off2, 0))
+    points[:, end-1] .= (0.99, 0)
     points[:, end] .= (1,0)
 
     spl = ParametricSpline(points)
-    f(x) = evaluate(spl, x)
 
-    X = 0:0.01:1
-    p = f.(X)
-
+    # X = 0:0.01:1
+    # p = spl.(X)
     # plot(map(x->x[1], p), map(x->x[2], p), ratio=1, ylims=(-0.2, 0.4), xlims=(-0.1, 1.1)) |> display
 
     return spl
 end
 
-random_connector() = get_connector(2π * rand(7))
-
+# tells if (px, py) is below the curve defined by the knob spline
+# spline_points = spline.(ts), ts[i] ∈ [0,1]
 function is_below(px, py, ts, spline_points, spline)
     i = argmin(i->((px - spline_points[i][1])^2 + (py - spline_points[i][2])^2), 1:length(spline_points))
     sx, sy = spline_points[i]
@@ -58,6 +81,7 @@ function draw_path!(io, points)
     end
 end
 
+# will transform the std_points that define the knob curve to the correct location and draw them
 # side = :right, or :bottom
 function draw_connector!(io, r, c, side, std_points, male=false)
     points = if male
@@ -112,51 +136,6 @@ function draw_puzzles(puzzle, puzzle2, out_name::String, connectors, out_type=PD
     save(out_type(out_name * "2"), picture)
 end
 
-
-
-function save_permutation(puzzle, sol, F::Int=1)
-    h, w = size(puzzle)
-    S = 64*F
-    H, W = S*h, S*w
-    def_y = reshape(repeat(1:H, W), H, W)
-    def_x = transpose(reshape(repeat(1:W, H), W, H))
-
-    out_x = similar(def_x)
-    out_y = similar(def_y)
-
-    for c=1:w, r=1:h
-        piece = puzzle[r, c]
-        for c2=1:w, r2=1:h
-            piece2 = sol[r2, c2]
-            if piece == piece2
-                xl, xr = (c-1)*S+1, c*S
-                yl, yr = (r-1)*S+1, r*S
-                from_x = def_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
-                from_y = def_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr]
-
-                xl, xr = (c2-1)*S+1, c2*S
-                yl, yr = (r2-1)*S+1, r2*S
-                to_x = @view(out_x[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
-                to_y = @view(out_y[yl .<= 1:H .<= yr, xl .<= 1:W .<= xr])
-
-                for r=0:3
-                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
-                        to_x .= rotr90(from_x, r)
-                        to_y .= rotr90(from_y, r)
-                        break
-                    end
-                end
-
-                break
-            end
-        end
-    end
-
-    CSV.write("out/perm_x.csv", Tables.table(out_x), writeheader=false)
-    CSV.write("out/perm_y.csv", Tables.table(out_y), writeheader=false)
-
-    out_x, out_y
-end
 
 
 # returns a matrix filled with indeces, each index corresponds to one puzzle piece, e.g.
@@ -264,9 +243,9 @@ end
 
 
 
-function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, F::Int=1)
+function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, F=1.0)
     h, w = size(puzzle)
-    S = 64*F
+    S = Int(64*F)
     H, W = S*h, S*w
     def_y = reshape(repeat(1:H, W), H, W)
     def_x = transpose(reshape(repeat(1:W, H), W, H))
@@ -285,11 +264,11 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
         piece = puzzle[r, c]
         idx = (c-1)*h + r
         
+        # copy piece indeces from map, and origin x and y coordinates into array
         piece_index_array .= false
         for i=1:2BORDER + S, j=1:2BORDER + S
             i2, j2 = (r-1)*S+i-BORDER, (c-1)*S+j-BORDER
             if 1 <= i2 <= H && 1 <= j2 <= W
-                # println("$i, $j -> $(map[i2, j2])")
                 piece_index_array[i, j] = map[i2, j2] == idx
                 piece_array_x[i, j] = def_x[i2, j2]
                 piece_array_y[i, j] = def_y[i2, j2]
@@ -303,6 +282,8 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
 
                 for r=0:3
                     if to_tuple(rotate(piece, r)) == to_tuple(piece2)
+
+                        # copy coordinates in array to out with correct rotation
                         piece_index_array = rotr90(piece_index_array, r)
                         piece_array_x = rotr90(piece_array_x, r)
                         piece_array_y = rotr90(piece_array_y, r)
