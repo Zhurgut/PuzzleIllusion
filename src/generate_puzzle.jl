@@ -23,11 +23,11 @@ struct Piece
 end
 
 function Piece(t::Integer, r::Integer, b::Integer, l::Integer)
-    t2 = Connection(t)
-    r2 = Connection(r)
-    b2 = Connection(b)
-    l2 = Connection(l)
-    Piece(t2, r2, b2, l2)
+    ct = Connection(t)
+    cr = Connection(r)
+    cb = Connection(b)
+    cl = Connection(l)
+    Piece(ct, cr, cb, cl)
 end
 
 Piece(;l=0,b=0,r=0,t=0) = Piece(t,r,b,l)
@@ -67,6 +67,8 @@ function rand_perm!(array)
     return array
 end
 
+
+# to get permutation of the edge pieces
 let perm::Vector{Int} = collect(1:10)
 
     global function edge_perm(w, h)
@@ -174,7 +176,7 @@ function piece_fits_nowhere(p, r, c, puzzle)
            !is_fit(toleft.right, p.left) && !is_fit(below.top, p.bottom)
 end
 
-
+# put solution 1 into sol1, and permuted solution 2 into out
 let filling_perm::Vector{Int} = zeros(Int, 10)
 
     global function random_puzzle!(sol1, out)
@@ -222,6 +224,7 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
     end
 end
 
+
 let map::Vector{Int} = zeros(Int, 1024)
 
     global function get_mapping!(graph)
@@ -267,7 +270,7 @@ let map::Vector{Int} = zeros(Int, 1024)
     end
 end
 
-
+# given two puzzle solutions, solve constraints to figure out what connectors go where
 let graph::Matrix{Bool} = zeros(Bool, 1024, 1024)
 
     global function resolve_connections!(def_sol, sol2)
@@ -397,7 +400,6 @@ let pairs::Vector{NTuple{6, Int16}} = []
             p2 = rotate(puzzle[r+1, c], -1)
 
             for r1=1:4, r2=1:4
-                # check that each pair cannot be reassembled differently into itself
                 u1, u2 = rotate(p2, r1), rotate(p1, r2)
                 if is_fit(u1.right, u2.left)
                     if tuple(p1, p2) == tuple(u1, u2)
@@ -410,6 +412,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
             push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
 
+        # check that all pairs have a unique arrangement of the 6 outside knobs/holes
         sort!(pairs, alg=QuickSort)
 
         n = length(pairs)
@@ -424,6 +427,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
 
 end
 
+# put a piece to next_r,next_c and recursively search for all solutions
 function all_solutions!(solution, pieces, next_r, next_c, solutions; start_time=time(), max_time=5, max_nr_solutions=100)
     if time() - start_time > max_time || length(solutions) >= max_nr_solutions
         return false
@@ -542,8 +546,10 @@ function save_puzzle(sol1, sol2, F=nothing)
     out_folder = joinpath(@__DIR__, "..", "puzzles", "$(W)x$(H)")
     mkpath(out_folder)
 
+    # save print.pdf 
     draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors)
 
+    # save permutation matrices for image generation
     if isnothing(F)
         ub = sqrt(256 / (H*W))
         M = min(H, W)
@@ -559,6 +565,7 @@ function save_puzzle(sol1, sol2, F=nothing)
         save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, F)
     end
 
+    # save text file of puzzle layout with connector indices
     open(joinpath(out_folder, "puzzle.txt"), "w") do io
         show(io, "text/plain", sol1)
         println(io)
@@ -566,19 +573,65 @@ function save_puzzle(sol1, sol2, F=nothing)
     end 
 end
 
-function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=30, save=true, check=true)
+entropy(probs) = -sum((p * log(p) for p in probs))
+
+# say that a corner of a puzzle piece is one half of the piece when cut diagonally
+# calculate the entropy of a puzzle by computing the entropy of distribution of such piece corners
+# the higher the entropy, the fewer options the all_solutions! function will have at any step
+# the easier it is to verify the absence of extra solutions
+let counts::Matrix{Int} = zeros(Int, 60, 60),
+    probabilities::Vector{Float64} = zeros(200)
+
+    global function piece_entropy(puzzle)
+        fill!(counts, 0)
+        S = size(counts, 1) ÷ 2
+
+        mx = 0
+        for piece in puzzle
+            for r in allrotations(piece)
+                counts[r.top.id + S, r.right.id + S] += 1
+                mx = max(mx, abs(r.top.id))
+            end
+        end
+
+        counts2 = @view(counts[-mx+S:mx+S, -mx+S:mx+S])
+        empty!(probabilities)
+
+        nr_pairs = 0
+        for i in eachindex(counts2)
+            if counts2[i] != 0
+                push!(probabilities, counts2[i])
+                nr_pairs += 1
+            end
+        end
+
+        h,w = size(puzzle)
+
+        for i in eachindex(probabilities)
+            probabilities[i] *= (1 / (h*w*4))
+        end
+
+        @assert sum(probabilities) ≈ 1
+
+        return entropy(probabilities)
+    end
+end
+
+# the saved permutation matrices, will have size (w*out_scale*64, h*out_scale*64)
+# these sizes need to be a multiple of 64
+# calculated automatically to be as big as reasonably possible for SD3.5 medium if out_scale=nothing
+function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_for_solve=30, save=true, check=true)
 
     sol1 = Matrix{Piece}(undef, h, w)
     sol2 = Matrix{Piece}(undef, h, w)
-    random_puzzle!(sol1, sol2) # random puzzle with at least two solutions
+    random_puzzle!(sol1, sol2)
     resolve_connections!(sol1, sol2)
 
-    best1, best2, best_nr_inner_cs, best_nr_cs, best_most_prominent = (sol1, sol2, nr_connections_inside(sol1), length(nr_connections(sol1)), 10000)
-    sols = []
+    best1, best2, best_entropy = (sol1, sol2, 0)
 
     start_time = time()
-
     for t = 1:nr_trials
+
         if time() - start_time > 60
             start_time = time()
             println("$t / $nr_trials")
@@ -587,30 +640,26 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=3
         random_puzzle!(sol1, sol2) # random puzzle with at least two solutions
         resolve_connections!(sol1, sol2) # use as many different connectors as possible
 
-        # check if puzzle fulfills our constraints
-        # ideally we would check if it has exactly 2 solutions, but that's not possible due to the combinatorial blow up
-        # the problem is NP complete https://en.wikipedia.org/wiki/Edge-matching_puzzle
-        # but we can check some obvious things to make sure there arent any additional solutions
-
+        # some necessary conditions for having exactly 2 solutions:
         if !pieces_are_unique(sol1) continue end # no duplicate pieces
-        if rot_symmetric_pieces_exist(sol1) continue end # every piece must not be rotationally symmetric
+        if rot_symmetric_pieces_exist(sol1) continue end # no piece is rotationally symmetric
         if same_pair_exists(sol1) continue end # all pairs of pieces must not be rotationally symmetric
         if same_pair_exists(sol2) continue end # and no two pairs of pieces must be the same
 
-        stats = nr_connections(sol1)
-        nr_cs, most_prominent = length(stats), stats[end] ÷ 2
-        nr_inner_cs = nr_connections_inside(sol1)
+        # otherwise we have a candidate which likely only has 2 solutions
+        # increase likelyhood by choosing the solution which maximizes "puzzle entropy"
+        entropy = piece_entropy(sol1)
 
-        if nr_inner_cs > best_nr_inner_cs || 
-                nr_inner_cs == best_nr_inner_cs && nr_cs > best_nr_cs ||
-                nr_inner_cs == best_nr_inner_cs && nr_cs == best_nr_cs && most_prominent < best_most_prominent
+        if entropy > best_entropy
             best1 = copy(sol1)
             best2 = copy(sol2)
-            best_nr_inner_cs = nr_inner_cs
-            best_nr_cs = nr_cs
-            best_most_prominent = most_prominent
+            best_entropy = entropy
 
-            println("$(nr_cs), $(nr_inner_cs), $(most_prominent)")
+            stats = nr_connections(sol1)
+            nr_cs, most_prominent = length(stats), stats[end] ÷ 2
+            nr_inner_cs = nr_connections_inside(sol1)
+
+            println("$(round(entropy, digits=13)); total: $(nr_cs), inner: $(nr_inner_cs), most: $(most_prominent)")
         end
         
     end
@@ -626,12 +675,9 @@ function generate_puzzle(w, h, nr_trials=100000; F=nothing, max_time_for_solve=3
             println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
         end
     end
-    
-    println("total nr distinct connectors: $best_nr_cs")
-    println("nr distinct inner connections: $best_nr_inner_cs")
 
     if save
-        save_puzzle(best1, best2, F)
+        save_puzzle(best1, best2, out_scale)
     end
     
     best1, best2
