@@ -42,28 +42,35 @@ While using pixel based diffusion makes a lot of sense, I was excited about rece
 <br>
 
 <div style="display: flex; gap: 10px;">
-  <img src="assets/waterduck.png" style="width: 49%; height: auto;" />
-  <img src="assets/waterduckbunny.png" style="width: 49%; height: auto;" />
+  <img src="assets/waterduck1.png" style="width: 49%; height: auto;" />
+  <img src="assets/waterduck2.png" style="width: 49%; height: auto;" />
+</div>
+<br> 
+ 
+<div style="display: flex; gap: 10px;">
+  <img src="assets/realduck.png" style="width: 49%; height: auto;" />
+  <img src="assets/realbunny.png" style="width: 49%; height: auto;" />
+</div>
+<br>
+
+<div style="display: flex; gap: 10px;">
+  <img src="assets/robotcake1.png" style="width: 49%; height: auto;" />
+  <img src="assets/robotcake2.png" style="width: 49%; height: auto;" />
 </div>
 <br>
  
 <div style="display: flex; gap: 10px;">
-  <img src="assets/kitchendoe1.png" style="width: 49%; height: auto;" />
-  <img src="assets/kitchendoe2.png" style="width: 49%; height: auto;" />
+  <img src="assets/fruitdeer1.png" style="width: 49%; height: auto;" />
+  <img src="assets/fruitdeer2.png" style="width: 49%; height: auto;" />
 </div>
 <br>
 
-<div style="display: flex; gap: 10px;">
-  <img src="assets/kitchendeer2.png" style="width: 49%; height: auto;" />
-  <img src="assets/kitchendeer1.png" style="width: 49%; height: auto;" />
-</div>
-<br>
 
-<!-- <img src="assets/castlefish1.png" style="width: 99%; height: auto;" />
-<img src="assets/castlefish2.png" style="width: 99%; height: auto;" />
+<img src="assets/fishcastle1.png" style="width: 99%; height: auto;" />
+<img src="assets/fishcastle2.png" style="width: 99%; height: auto;" />
 <br> 
-<br>  -->
-
+<br> 
+<!-- 
 <div style="display: flex; gap: 10px;">
   <img src="assets/castlefish1.png" style="width: 49%; height: auto;" />
   <img src="assets/castlefish2.png" style="width: 49%; height: auto;" />
@@ -73,6 +80,18 @@ While using pixel based diffusion makes a lot of sense, I was excited about rece
 <div style="display: flex; gap: 10px;">
   <img src="assets/fishcastle1.png" style="width: 49%; height: auto;" />
   <img src="assets/fishcastle2.png" style="width: 49%; height: auto;" />
+</div>
+<br> -->
+
+<div style="display: flex; gap: 10px;">
+  <img src="assets/wine1.png" style="width: 49%; height: auto;" />
+  <img src="assets/wine2.png" style="width: 49%; height: auto;" />
+</div>
+<br>
+
+<div style="display: flex; gap: 10px;">
+  <img src="assets/citycar2.png" style="width: 49%; height: auto;" />
+  <img src="assets/citycar1.png" style="width: 49%; height: auto;" />
 </div>
 <br>
 
@@ -121,11 +140,11 @@ Here a positive number designates a male connector, and the corresponding negati
 So 1 → (-1) → (-8) → 8 → 5 → (-5) → (-12) → 12 becomes
 1 → (-1) → 1 → (-1) → 1 → (-1) → 1 → (-1)
 
-The resulting set of puzzle pieces has at least two distinct solutions. However it might have significantly more solutions. Rather than solving the puzzle completely to check how many solutions there are, which can be quite costly for larger puzzle sizes, we can filter out a large portion of these candidate solutions based on some easy-to-check conditions. For example, when we construct a puzzle in this way, if any of the puzzle pieces are rotationally symmetric, or if the puzzle has duplicate pieces, we know for sure that there are more than just two solutions.
+The resulting set of puzzle pieces has at least two distinct solutions. However it might have significantly more solutions. Rather than solving the puzzle completely to check how many solutions there are, which can be quite costly for larger puzzle sizes, we can filter out a large portion of these candidate puzzles based on some easy-to-check conditions. For example, when we construct a puzzle in this way, if any of the puzzle pieces are rotationally symmetric, or if the puzzle has duplicate pieces, we know for sure that there are more than just two solutions.
 
-An additional desirable quality that we want is "no repeated matches", i.e. no two pieces are connected in the same way in both solutions. This constraint is incorporated into the shuffling process. Care is taken so that in the second solution no connection from the first solution exists (unlike in the above example, where 7 connects to (-7) in both solutions). 
+An additional quality that we want is "no repeated matches", i.e. no two pieces are connected in the same way in both solutions. This constraint is incorporated into the shuffling process. Care is taken so that in the second solution no connection from the first solution exists (unlike in the above example, where 7 connects to (-7) in both solutions). 
 
-This approach facilitates iterating over many candidate solutions quickly. We search for a puzzle that has as many different connectors as possible, since puzzles with more different connectors are less likely to have any extra solutions. The largest puzzle I was able to find this way with exactly two solutions has size 9 by 9. For sizes larger than that, solving the puzzle to verify that there are no other solutions becomes too computationally expensive. 
+This approach facilitates iterating over many candidate solutions quickly. We search for a puzzle where the pieces are as different from each other as possible, as that makes it easier for the puzzle solver to verify the absence of more than two solutions. The largest puzzle I was able to find this way with exactly two solutions has size 10x10. For sizes larger than that, solving the puzzle to verify that there are no other solutions becomes very computationally expensive. 
 
 
 ### Generating the images
@@ -150,19 +169,15 @@ At every step, we denoise and transform the image $y_t$ and treat the resulting 
 
 This method is computationally quite intensive, but I found it necessary in order to get nice textures in the output.
 
-## Installation
+## Running the code
 
-...
+TODO...
 
 ## Future Work
  
-performance improvements
+At larger sizes, e.g. 16x16, it becomes virtually impossible to find jigsaw puzzles without duplicate pieces, is there a more sophisticated/mathematical construction method?
 
-parallelize puzzle finding and puzzle solving
-
-translating "solving the puzzle" to SAT, where satisfiable implies there is a third solution. pass to optimized sat solver, might be able to handle larger sizes...
-
-Generating puzzles with no duplicate pieces, and even better no rotationally symmetric pieces as well, by construction. at size e.g. 16x16, it is almost impossible to find a puzzle with all distinct pieces, need a more sophisticated approach, if it is even possible. 
+Improve image quality. The two latent images that are denoised have to converge to the same image. While they do get closer to each other during the process, they only converge in the very last step. This last step seems to be a relatively large jump towards the average of the two images in latent space, depending on the prompts. Maybe there is more elegant way of handling these final denoising steps...
 
 
 
