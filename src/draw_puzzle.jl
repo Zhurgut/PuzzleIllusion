@@ -4,7 +4,7 @@ point(angle) = cos(angle), sin(angle)
 
 # define some points which a parametric spline will go through to create a knobly bit
 function random_connector(;
-    max_vertical_offset = 0.04,
+    max_vertical_offset = 0.03,
     min_vertical_offset = 0.005,
     outer_slide = 0.05,
     radius = 0.025,
@@ -25,16 +25,15 @@ function random_connector(;
     # The spline will go through a random point on the circle with center 
     # at the points and radius
     knob_points = [
-        (0.407,   0.075 - vertical_off1),
+        (0.407, 0.075 - vertical_off1),
         (0.375, 0.2   - vertical_off1),
         (0.5,   0.275 - vertical_off1),
         (0.625, 0.2   - vertical_off2),
-        (0.593,   0.075 - vertical_off2),
+        (0.593, 0.075 - vertical_off2),
     ]
 
     points = zeros(2, 11)
     points[:, 1] .= (0,0)
-    # points[:, 2] .= (0.01, map(0.01, 0, outer_points[1][1], 0, -vertical_off1))
     points[:, 2] .= (0.01, 0)
     points[:, 3] .= outer_points[1]
     for (i, c) in enumerate(knob_points)
@@ -46,7 +45,6 @@ function random_connector(;
         end
     end
     points[:, end-2] .= outer_points[2]
-    # points[:, end-1] .= (0.99, map(0.99, outer_points[2][1], 1, -vertical_off2, 0))
     points[:, end-1] .= (0.99, 0)
     points[:, end] .= (1,0)
 
