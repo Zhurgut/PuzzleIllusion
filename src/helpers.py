@@ -1,18 +1,15 @@
 
 import torch
-import torchvision
 from transformers import T5EncoderModel, BitsAndBytesConfig
 from diffusers import StableDiffusion3Pipeline
+import os
 
 import math
 
 model_id = "stabilityai/stable-diffusion-3.5-medium"
 
-# 1. Define the quantization config for the T5 text encoder
-# Using 8-bit (int8) is a great balance; use load_in_4bit=True for even more savings.
 quantization_config = BitsAndBytesConfig(load_in_8bit=True)
 
-# 2. Load the T5 encoder separately (it's 'text_encoder_3' in SD3.5)
 text_encoder_3 = T5EncoderModel.from_pretrained(
     model_id,
     subfolder="text_encoder_3",
@@ -20,8 +17,6 @@ text_encoder_3 = T5EncoderModel.from_pretrained(
     torch_dtype=torch.bfloat16,
 )
 
-# 3. Load the pipeline, passing in your quantized encoder
-# We set text_encoder_3 to the one we just loaded
 pipeline = StableDiffusion3Pipeline.from_pretrained(
     model_id,
     text_encoder_3=text_encoder_3,
@@ -120,6 +115,18 @@ def align_to_64(width, height):
     nh = math.floor(nh) // 64 * 64
     return nw, nh
 
-def prepare_scheduler(num_inference_steps, next_index):
+def prepare_scheduler(num_inference_steps, begin_index):
     pipeline.scheduler.set_timesteps(num_inference_steps)
-    pipeline.scheduler.set_begin_index(next_index)
+    pipeline.scheduler.set_begin_index(begin_index)
+
+def prepare_linear_schedule(nr_steps, start=1):
+    
+    pipeline.scheduler.sigmas = torch.linspace(start, 0, nr_steps+1)
+    pipeline.scheduler.timesteps = 1000 * pipeline.scheduler.sigmas[0:-1]
+
+    pipeline.scheduler._step_index = None
+    pipeline.scheduler._begin_index = None
+    pipeline.scheduler.set_begin_index(0)
+
+def get_src_path():
+    return os.path.dirname(os.path.abspath(__file__))
