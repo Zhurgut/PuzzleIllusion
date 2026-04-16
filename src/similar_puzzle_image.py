@@ -29,17 +29,6 @@ def inverse_permutation(permutex, permutey):
     return inv_permutex, inv_permutey
 
 
-
-def permute_latent(latents, permutex, permutey):
-    bs, c, h, w = latents.shape
-    pixels = torch.repeat_interleave(latents, 8, dim=-1)
-    pixels = torch.repeat_interleave(pixels, 8, dim=-2)
-    permuted = pixels[:, :, permutey, permutex]
-    permuted_latents = torch.nn.functional.avg_pool2d(permuted, 8, stride=8)
-    return permuted_latents
-
-
-
 def generate(
     puzzle_w, puzzle_h,
     prompt: str,
@@ -96,7 +85,7 @@ def generate(
 
                 noise_pred = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
                 
-                hint_noise_pred = (latents - hint_latents) / (s + 0.01)
+                hint_noise_pred = (latents - hint_latents) / s
 
                 if (1-s) < hint_until:
                     w = s * hint_weight
@@ -126,35 +115,17 @@ def generate(
 
 
 # imgs = generate(
-#     "colorful sports cars driving through tokyo",
-#     "data/guitars.png",
-#     num_inference_steps=80,
-#     hint_weight=0.7,
-#     hint_until=0.65
+#     10,10,
+#     "a rock formation in the alps, among small pine trees and bushes, birds flying in the air. there is a little hut",
+#     "assets/matt.png",
+#     "assets/steve.png",
+#     num_inference_steps=50,
+#     hint_weight=1.0,
+#     hint_until=0.7,
+#     negative_prompt="pixel art"
 # )
 
-# imgs = generate(
-#     "A campsite with a bunch of RVs in the forest",
-#     "data/guitar.png",
-#     num_inference_steps=100,
-#     hint_weight=0.7,
-#     hint_until=0.65
-# )
+# out_path = puzzle_path = os.path.join(os.path.dirname(__file__), f"../out")
 
-
-imgs = generate(
-    10,10,
-    # "a rock formation in the alps, among small pine trees and bushes, birds flying in the air. there is a little hut",
-    # "assets/matt.png",
-    "a village of small mud houses set on a gray rocky cliff. There are dried out bushes and grass, and some red alien plants. ",
-    "../assets/steve.png",
-    num_inference_steps=50,
-    hint_weight=1.0,
-    hint_until=0.7,
-    negative_prompt="pixel art"
-)
-
-out_path = puzzle_path = os.path.join(os.path.dirname(__file__), f"../out")
-
-for i in range(len(imgs)):
-    imgs[i].save(os.path.join(out_path, f"similar_puzzle{i}.png"))
+# for i in range(len(imgs)):
+#     imgs[i].save(os.path.join(out_path, f"similar_puzzle{i}.png"))
