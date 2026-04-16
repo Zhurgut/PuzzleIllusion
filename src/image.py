@@ -5,18 +5,15 @@ import helpers
 pipeline = helpers.pipeline
 
 
+
+# expects the scheduler to be set
 def optimize(
-    latents, prompt_embeds, num_inference_steps, guidance_scale, begin_index=0
+    latents, prompt_embeds, guidance_scale
 ):
-
-    helpers.prepare_scheduler(num_inference_steps, begin_index)
-
-    nr_steps_to_take = num_inference_steps - begin_index
-    assert begin_index + nr_steps_to_take <= num_inference_steps
-
+    nr_steps = len(pipeline.scheduler.timesteps)
     # 7. Denoising loop
-    with pipeline.progress_bar(total=nr_steps_to_take) as progress_bar:
-        for i in range(begin_index, begin_index + nr_steps_to_take):
+    with pipeline.progress_bar(total=nr_steps) as progress_bar:
+        for i in range(nr_steps):
 
             t = pipeline.scheduler.timesteps[i:i+1]
 
@@ -59,25 +56,10 @@ def generate(
             None,
         )
 
-        finished_latents = optimize(latents, prompt_embeds, num_inference_steps, guidance_scale)
+        helpers.prepare_scheduler(num_inference_steps, 0)
+
+        finished_latents = optimize(latents, prompt_embeds, guidance_scale)
 
         image = helpers.latent_to_pil(finished_latents)
 
         return image
-
-
-# for i in range(10):
-# img = generate(
-#     "forest in the style of studio ghibli, anime style",
-#     1024, 1024,
-#     num_inference_steps=20,
-# )
-
-# img.save("out/image.png")
-
-
-# generate(
-#     "abstract expressionist messy non-representational watercolor of a duck", 
-#     num_inference_steps=40,
-#     negative_prompt="realistic, realism, photography, clean"
-#     ).save("../out/image.png")
