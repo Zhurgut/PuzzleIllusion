@@ -16,7 +16,7 @@ Once the puzzle pieces and solutions have been found, an image needs to be creat
 
 Since then, diffusion models have improved significantly. Daniel Geng et al. made similar images available on their website: [Visual Anagrams](https://dangeng.github.io/visual_anagrams/). ([paper](https://arxiv.org/abs/2311.17919)). They used the [DeepFloyd IF](https://github.com/deep-floyd/IF) pixel-based diffusion model to produce their amazing results. I highly recommend you check them out!
 
-While using pixel based diffusion makes a lot of sense, I was excited about recent *latent* diffusion models. So I set out on the journey of making puzzles with two distinct solutions and generating images for them using a [Stable Diffusion 3.5](https://github.com/Stability-AI/sd3.5) model.
+While using pixel based diffusion makes a lot of sense, I was excited about recent *latent* diffusion models. So I set out on the journey of making puzzles with two distinct solutions and generating images for them using the [Stable Diffusion 3.5 Medium](https://github.com/Stability-AI/sd3.5) model.
 
 
 
@@ -169,9 +169,40 @@ At every step, we denoise and transform the image $y_t$ and treat the resulting 
 
 This method is computationally quite intensive, but I found it necessary in order to get nice textures in the output.
 
-## Running the code
+## How to run the code
 
-TODO...
+### Generating Images
+
+#### Requirements
+ 
+The code was tested using a CUDA capable GPU with 16GB of VRAM. If your GPU is smaller, or from a different vendor, you may need to modify the source code and choose a different model quantization strategy. (Running on CPU is very slow).  
+Furthermore, you will need to share your contact information on [HuggingFace](https://huggingface.co/stabilityai/stable-diffusion-3.5-medium) in order to get access to the Stable Diffusion model. 
+
+The Python environment can be set up on Linux/WSL with the following commands:
+
+```bash
+git clone https://github.com/Zhurgut/PuzzleIllusion.git
+cd PuzzleIllusion
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If you are new to HuggingFace, follow the instructions in the first cell of [src/main.ipynb](/src/main.ipynb) to login. 
+Once installation is complete, you can open the project in VS Code and use [src/main.ipynb](/src/main.ipynb) to generate images for the jigsaw puzzles in the `/puzzles` folder. 
+
+### Generating Jigsaw Puzzles
+
+For better performance, the jigsaw generation is implemented in julia. The fastest way to install julia is via [juliaup](https://julialang.org/downloads/).
+
+On Linux, that is: 
+
+```bash
+curl -fsSL https://install.julialang.org | sh
+```
+
+Jigsaw puzzles can be generated using the `generate_puzzle` function in [src/main.ipynb](/src/main.ipynb). The results are saved in the `/puzzles` folder. Required julia packages will be installed automatically on first use. 
 
 ## Future Work
  

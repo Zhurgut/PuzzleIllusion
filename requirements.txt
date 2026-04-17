@@ -1,0 +1,9 @@
+numpy
+torch
+torchvision
+transformers
+diffusers
+bitsandbytes
+accelerate
+ipykernel
+ipywidgets
