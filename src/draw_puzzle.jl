@@ -1,4 +1,5 @@
-using Dierckx, Plots, PicturaShapes, TikzPictures
+using Dierckx, PicturaShapes, TikzPictures
+# using Plots
 
 point(angle) = cos(angle), sin(angle)
 
