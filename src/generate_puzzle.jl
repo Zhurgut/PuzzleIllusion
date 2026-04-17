@@ -1,5 +1,4 @@
 using LinearAlgebra, Statistics
-using Combinatorics
 import CSV, Tables
 
 struct Connection
