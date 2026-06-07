@@ -3,6 +3,7 @@ import torch
 from transformers import T5EncoderModel, BitsAndBytesConfig
 from diffusers import StableDiffusion3Pipeline
 import os
+import numpy as np
 
 import math
 
@@ -128,5 +129,99 @@ def prepare_linear_schedule(nr_steps, start=1):
     pipeline.scheduler._begin_index = None
     pipeline.scheduler.set_begin_index(0)
 
+
+def inverse_permutation(permutex, permutey):
+    assert permutex.shape == permutey.shape
+    H, W = permutex.shape
+
+    rangey, rangex = torch.meshgrid(
+        torch.arange(0, H),
+        torch.arange(0, W),
+        indexing = "ij"
+    )
+
+    inv_permutex = torch.empty_like(permutex)
+    inv_permutey = torch.empty_like(permutey)
+
+    inv_permutex[permutey, permutex] = rangex
+    inv_permutey[permutey, permutex] = rangey
+
+    assert torch.all(rangex == permutex[inv_permutey, inv_permutex])
+    assert torch.all(rangey == permutey[inv_permutey, inv_permutex])
+
+    return inv_permutex, inv_permutey
+
+
 def get_src_path():
     return os.path.dirname(os.path.abspath(__file__))
+
+
+def load_latent_transform_data(puzzle_w, puzzle_h):
+
+    dir_path = get_src_path()
+    puzzle_path = os.path.join(dir_path, "..", f"puzzles/{puzzle_w}x{puzzle_h}")
+
+    datax = np.loadtxt(os.path.join(puzzle_path, "perm_x.csv"), delimiter=',')
+    datay = np.loadtxt(os.path.join(puzzle_path, "perm_y.csv"), delimiter=',')
+    permutex = (torch.from_numpy(datax) - datax.min()).long()
+    permutey = (torch.from_numpy(datay) - datay.min()).long()
+
+    invpermutex, invpermutey = inverse_permutation(permutex, permutey)
+
+    rot_map1 = torch.from_numpy(np.loadtxt(os.path.join(puzzle_path, "rot1.csv"), delimiter=',')).long().to("cuda")
+    rot_map2 = torch.from_numpy(np.loadtxt(os.path.join(puzzle_path, "rot2.csv"), delimiter=',')).long().to("cuda")
+
+    rot90fn = torch.nn.Linear(144, 16, bias=False)
+    rot90fn.load_state_dict(
+        torch.load(os.path.join(dir_path, "..", "latent_transforms", "rot90.pt"), weights_only=False)
+    )
+    rot180fn = torch.nn.Linear(144, 16, bias=False)
+    rot180fn.load_state_dict(
+        torch.load(os.path.join(dir_path, "..", "latent_transforms", "rot180.pt"), weights_only=False)
+    )
+    rot270fn = torch.nn.Linear(144, 16, bias=False)
+    rot270fn.load_state_dict(
+        torch.load(os.path.join(dir_path, "..", "latent_transforms", "rot270.pt"), weights_only=False)
+    )
+
+    rot90fn.to("cuda")
+    rot180fn.to("cuda")
+    rot270fn.to("cuda")
+
+    latent_transform_data = permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn
+
+    return latent_transform_data
+
+def latent_img_to_in_samples(img):
+    return torch.nn.functional.unfold(img, 3, padding=1).permute((0, 2, 1)).reshape(-1, 144)
+
+def latent_transform(latents, latent_transform_data):
+    permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    BS, C, H, W = latents.shape
+    samples = latent_img_to_in_samples(latents).float()
+    rotated90 = rot90fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated180 = rot180fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated270 = rot270fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated = latents * (rot_map1 == 0) + rotated90 * (rot_map1 == 1) + rotated180 * (rot_map1 == 2)  + rotated270 * (rot_map1 == 3) 
+    expanded = rotated.unsqueeze(3).unsqueeze(5).expand(BS, C, H, 8, W, 8).reshape(BS, C, 8*H, 8*W)
+    transformed = expanded[:, :, permutey, permutex]
+    pooled = torch.nn.functional.avg_pool2d(transformed, kernel_size=8, stride=8)
+    assert pooled.shape == latents.shape
+
+    return pooled.to(torch.bfloat16)
+
+
+def latent_inv_transform(latents, latent_transform_data):
+    permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    BS, C, H, W = latents.shape
+    samples = latent_img_to_in_samples(latents).float()
+    rotated90 = rot90fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated180 = rot180fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated270 = rot270fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
+    rotated = latents * (rot_map2 == 0) + rotated90 * (rot_map2 == 1) + rotated180 * (rot_map2 == 2)  + rotated270 * (rot_map2 == 3) 
+    expanded = rotated.unsqueeze(3).unsqueeze(5).expand(BS, C, H, 8, W, 8).reshape(BS, C, 8*H, 8*W)
+    transformed = expanded[:, :, invpermutey, invpermutex]
+    pooled = torch.nn.functional.avg_pool2d(transformed, kernel_size=8, stride=8)
+    assert pooled.shape == latents.shape
+
+    return pooled.to(torch.bfloat16)

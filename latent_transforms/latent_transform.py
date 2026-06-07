@@ -38,9 +38,6 @@ def encode(X):
     return Z
 
 
-def latent_img_to_in_samples(img):
-    return F.unfold(img, 3, padding=1).permute((0, 2, 1)).reshape(-1, 144)
-
 def generate_dataset(nr_samples):
     with torch.no_grad():
         img_size = 64
@@ -52,10 +49,10 @@ def generate_dataset(nr_samples):
         denoised180 = torch.rot90(encode(torch.rot90(decoded, 2, (3, 2))), -2, (3, 2))
         denoised270 = torch.rot90(encode(torch.rot90(decoded, 3, (3, 2))), -3, (3, 2))
 
-        x = latent_img_to_in_samples(denoised)
-        x90 = latent_img_to_in_samples(denoised90)
-        x180 = latent_img_to_in_samples(denoised180)
-        x270 = latent_img_to_in_samples(denoised270)
+        x = helpers.latent_img_to_in_samples(denoised)
+        x90 = helpers.latent_img_to_in_samples(denoised90)
+        x180 = helpers.latent_img_to_in_samples(denoised180)
+        x270 = helpers.latent_img_to_in_samples(denoised270)
 
         y = denoised.permute(0, 2, 3, 1).reshape((-1, 16))
         y90 = denoised90.permute(0, 2, 3, 1).reshape((-1, 16))
@@ -112,9 +109,9 @@ def train(nr_samples, lr=2e-3, var_preservation=1.0):
                 print(i, ", ", var_loss.item(), ", ", loss.item())
 
         if i == 1:
-            test_linear = model(latent_img_to_in_samples(test_latents.float())).reshape(BS, H, W, C).permute((0, 3, 1, 2))
+            test_linear = model(helpers.latent_img_to_in_samples(test_latents.float())).reshape(BS, H, W, C).permute((0, 3, 1, 2))
             helpers.latent_to_pil(test_linear.to(torch.bfloat16)).save(os.path.join(dir_path, "out/LT_linear.png"))
         
-        torch.save(model.state_dict, os.path.join(dir_path, f"latent_transforms/rot{r*90}.pt"))
+        torch.save(model.state_dict(), os.path.join(dir_path, f"latent_transforms/rot{r*90}.pt"))
 
         r += 1

@@ -240,6 +240,18 @@ function get_piece_map(puzzle, S, splines)
     return map
 end
 
+function downsample_rotation_map(rot_map)
+    H, W = size(rot_map)
+    out = zeros(Int, H ÷ 8, W ÷ 8)
+    h, w = size(out)
+    for r = 1:h, c = 1:w
+        tile = rot_map[(r-1)*8+1:8r, (c-1)*8+1:8c]
+        votes = [sum(tile .== i) for i = 0:3]
+        out[r, c] = argmax(votes) - 1
+    end
+
+    return out
+end
 
 
 function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, F=1.0)
@@ -252,7 +264,7 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
     out_x = similar(def_x)
     out_y = similar(def_y)
 
-    rot_map = zeros(Int, H, W)
+    rot_map2 = zeros(Int, H, W)
 
     map = get_piece_map(puzzle, S, connectors)
 
@@ -295,7 +307,7 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
                                 out_x[i2, j2] = piece_array_x[i, j]
                                 out_y[i2, j2] = piece_array_y[i, j]
 
-                                rot_map[i2, j2] = (4 - r) % 4
+                                rot_map2[i2, j2] = (4 - r) % 4
                             end
                         end
                         break
@@ -311,11 +323,14 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
     CSV.write(joinpath(out_folder, "perm_y.csv"), Tables.table(out_y), writeheader=false)
 
     perm = CartesianIndex.(out_y, out_x)
-    rot1 = zeros(Int, H, W)
-    rot1[perm] .= (4 .- rot_map) .% 4
+    rot_map1 = zeros(Int, H, W)
+    rot_map1[perm] .= (4 .- rot_map2) .% 4
+
+    rot2 = downsample_rotation_map(rot_map2)
+    rot1 = downsample_rotation_map(rot_map1)
 
     CSV.write(joinpath(out_folder, "rot1.csv"), Tables.table(rot1), writeheader=false)
-    CSV.write(joinpath(out_folder, "rot2.csv"), Tables.table(rot_map), writeheader=false)
+    CSV.write(joinpath(out_folder, "rot2.csv"), Tables.table(rot2), writeheader=false)
 
     out_x, out_y
 end
