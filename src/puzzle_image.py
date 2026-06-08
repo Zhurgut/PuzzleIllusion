@@ -1,95 +1,88 @@
 import torch
-import numpy as np
 import helpers
-import image
-import os
 
 pipeline = helpers.pipeline
-
-
-def inverse_permutation(permutex, permutey):
-    assert permutex.shape == permutey.shape
-    H, W = permutex.shape
-
-    rangey, rangex = torch.meshgrid(
-        torch.arange(0, H),
-        torch.arange(0, W),
-        indexing = "ij"
-    )
-
-    inv_permutex = torch.empty_like(permutex)
-    inv_permutey = torch.empty_like(permutey)
-
-    inv_permutex[permutey, permutex] = rangex
-    inv_permutey[permutey, permutex] = rangey
-
-    assert torch.all(rangex == permutex[inv_permutey, inv_permutex])
-    assert torch.all(rangey == permutey[inv_permutey, inv_permutex])
-
-    return inv_permutex, inv_permutey
 
 
 def optimize(
     latents, 
     prompt_embeds,
     num_inference_steps,
-    nr_steps_to_finish,
     guidance_scale,
-    permutex, permutey, invpermutex, invpermutey
+    LT_data
 ):
+    
+    permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
 
-    def map(x, a, b, A, B):
-        return (x-a) / (b-a) * (B-A) + A
+    latents[1:2, :, :, :] = helpers.latent_transform(latents[0:1, :, :, :], LT_data)
+
+    helpers.prepare_scheduler(num_inference_steps, 0)
 
     # 7. Denoising loop
     with pipeline.progress_bar(total=num_inference_steps) as progress_bar:
-        for i in range(num_inference_steps):
-
-            helpers.prepare_scheduler(num_inference_steps, i)
+        for i in range(num_inference_steps-1):
 
             t = pipeline.scheduler.timesteps[i:i+1]
             s = pipeline.scheduler.sigmas[i]
 
+            f_l1 = helpers.latent_transform(latents[0:1, :, :, :], LT_data)
+            f_l2 = helpers.latent_inv_transform(latents[1:2, :, :, :], LT_data)
+
+            delta = 0.5
+
+            avg_latents = (1-delta) * latents + delta * (torch.cat([f_l2, f_l1]))
+
+            noise_preds = helpers.get_noise_pred(avg_latents, prompt_embeds, t, guidance_scale)
+
+            
+
+            # noise_pred1, noise_pred2 = noise_preds.chunk(2)
+            # noise_pred2 = helpers.latent_inv_transform(noise_pred2, LT_data)
+
+            # final_noise_pred = 0.5 * (noise_pred1 + noise_pred2 + (latents - helpers.latent_inv_transform(latents2, LT_data)))
+            # # final_noise_pred = 0.5 * (noise_pred1 + noise_pred2)
         
-            print()
-            helpers.prepare_linear_schedule(min(nr_steps_to_finish, num_inference_steps-i), start=s)
-            future_latents = image.optimize(latents, prompt_embeds, guidance_scale)
-
-            
-            future_img1, future_img2 = helpers.decode(future_latents).chunk(2)
-            
-            hint_for_img2 = future_img1[:, :, permutey, permutex]
-            hint_for_img1 = future_img2[:, :, invpermutey, invpermutex]
-            hint_latents = helpers.encode2(torch.cat([hint_for_img1, hint_for_img2]))
-            
-            # w = 0.1
-            # latents = latents + w * (hint_latents - future_latents)
-            noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
-        
-            hint_noise_preds = (latents - hint_latents) / s # s != 0 here always
-
-            w_snr = s**2 / (s**2 + (1-s)**2)
-            w = map(w_snr, 1, 0, 0.75, 0.5)
-            # w = 0.7
-            final_noise_preds = (1-w) * noise_preds + w * hint_noise_preds
-            # final_noise_preds = hint_noise_preds
-
-            helpers.prepare_scheduler(num_inference_steps, i)
-
-            latents = pipeline.scheduler.step(final_noise_preds, t, latents, return_dict=False)[0]
+            latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
 
             if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
                 progress_bar.update()
+        
+
+    i = num_inference_steps - 1
+    
+    t = pipeline.scheduler.timesteps[i:i+1]
+    s = pipeline.scheduler.sigmas[i]
+
+    noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
+
+    future_latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
+
+    fut2 = helpers.latents_roundtrip(future_latents[0:1, :, :, :], permutex, permutey)
+    fut1 = helpers.latents_roundtrip(future_latents[1:2, :, :, :], invpermutex, invpermutey)
+
+    latents = 0.5 * (future_latents + torch.cat([fut1, fut2]))
+
+    if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
+        progress_bar.update()
+
+
 
     imgs = []
 
-    dec1, dec2 = helpers.decode(future_latents).chunk(2)
+    decoded = helpers.decode(latents)
+    decoded2 = decoded[0:1, :, permutey, permutex]
+    decoded1 = decoded[1:2, :, invpermutey, invpermutex]
 
-    dec1_permuted = dec1[:, :, permutey, permutex]
-    dec2_invpermuted = dec2[:, :, invpermutey, invpermutex]
+    # tfd = helpers.latent_transform(latents, LT_data)
+    # tfd_decoded = helpers.decode(tfd)
+    # tfd_decoded1 = tfd_decoded[:, :, invpermutey, invpermutex]
 
-    imgs.append(pipeline.image_processor.postprocess(0.5 * (dec1 + dec2_invpermuted), output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(0.5 * (dec2 + dec1_permuted), output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(0.5 * (decoded[0:1, :, :, :] + decoded1), output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(0.5 * (decoded2 + decoded[1:2, :, :, :]), output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded[0:1, :, :, :], output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded[1:2, :, :, :], output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded1, output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded2, output_type="pil")[0])
     
     return imgs
     
@@ -99,7 +92,6 @@ def generate(
     prompt1: str,
     prompt2: str,
     num_inference_steps = 32,
-    nr_steps_to_finish=14,
     guidance_scale = 7.0,
     negative_prompt1="",
     negative_prompt2="",
@@ -108,12 +100,8 @@ def generate(
 
         prompt_embeds = helpers.encode_prompts([prompt1, prompt2], [negative_prompt1, negative_prompt2])
 
-        dir_path = helpers.get_src_path()
-
-        datax = np.loadtxt(os.path.join(dir_path, "..", f"puzzles/{puzzle_w}x{puzzle_h}/perm_x.csv"), delimiter=',')
-        datay = np.loadtxt(os.path.join(dir_path, "..", f"puzzles/{puzzle_w}x{puzzle_h}/perm_y.csv"), delimiter=',')
-        permutex = (torch.from_numpy(datax) - datax.min()).long()
-        permutey = (torch.from_numpy(datay) - datay.min()).long()
+        LT_data = helpers.load_latent_transform_data(puzzle_w, puzzle_h)
+        permutex = LT_data[0]
 
         height, width = permutex.shape
 
@@ -130,15 +118,10 @@ def generate(
             None,
         )
 
-        invpermutex, invpermutey = inverse_permutation(permutex, permutey)
-        
         return optimize(
             latents, prompt_embeds,
-            num_inference_steps, nr_steps_to_finish, guidance_scale,
-            permutex.to("cuda"), 
-            permutey.to("cuda"), 
-            invpermutex.to("cuda"), 
-            invpermutey.to("cuda")
+            num_inference_steps, guidance_scale,
+            LT_data
         )
 
 
