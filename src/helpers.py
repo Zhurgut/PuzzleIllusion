@@ -195,6 +195,14 @@ def load_latent_transform_data(puzzle_w, puzzle_h):
 def latent_img_to_in_samples(img):
     return torch.nn.functional.unfold(img, 3, padding=1).permute((0, 2, 1)).reshape(-1, 144)
 
+def apply_view_to_latents(latents, permutex, permutey):
+    BS, C, H, W = latents.shape
+    expanded = latents.unsqueeze(3).unsqueeze(5).expand(BS, C, H, 8, W, 8).reshape(BS, C, 8*H, 8*W)
+    transformed = expanded[:, :, permutey, permutex].float()
+    pooled = torch.nn.functional.avg_pool2d(transformed, kernel_size=8, stride=8)
+    return pooled.to(latents.dtype)
+
+
 def latent_transform(latents, latent_transform_data):
     permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
     BS, C, H, W = latents.shape
