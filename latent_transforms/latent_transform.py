@@ -68,7 +68,7 @@ def generate_dataset(nr_samples):
     
 
 
-def train(nr_samples, lr=2e-3, var_preservation=1.0):
+def train(nr_samples, lr=2e-3, var_preservation=1.0, nr_epochs=2500):
     X, Y90, Y180, Y270 = generate_dataset(nr_samples)
     BS, IN = X.shape
 
@@ -82,7 +82,7 @@ def train(nr_samples, lr=2e-3, var_preservation=1.0):
     pipeline.image_processor.postprocess(test_target, output_type="pil")[0].save(os.path.join(dir_path, "out/LT_target.png"))
 
     test_latents = torch.rot90(helpers.encode(test_img), 1, (3, 2))
-    BS, C, H, W = test_latents.shape
+    TEST_BS, TEST_C, TEST_H, TEST_W = test_latents.shape
     helpers.latent_to_pil(test_latents).save(os.path.join(dir_path, "out/LT_identity.png"))
 
     r = 1
@@ -94,7 +94,6 @@ def train(nr_samples, lr=2e-3, var_preservation=1.0):
         opt = torch.optim.AdamW(model.parameters() , lr=lr)
         mse = torch.nn.MSELoss()
 
-        nr_epochs = 1500
         for i in range(nr_epochs):
             opt.zero_grad()
 
@@ -107,11 +106,19 @@ def train(nr_samples, lr=2e-3, var_preservation=1.0):
 
             if i % (nr_epochs // 20) == 0:
                 print(i, ", ", var_loss.item(), ", ", loss.item())
+        
+        wt = model.weight
+        cov = wt @ wt.t()
+        print(cov)
 
-        if i == 1:
-            test_linear = model(helpers.latent_img_to_in_samples(test_latents.float())).reshape(BS, H, W, C).permute((0, 3, 1, 2))
+        if r == 1:
+            test_linear = model(helpers.latent_img_to_in_samples(test_latents.float())).reshape(TEST_BS, TEST_H, TEST_W, TEST_C).permute((0, 3, 1, 2))
             helpers.latent_to_pil(test_linear.to(torch.bfloat16)).save(os.path.join(dir_path, "out/LT_linear.png"))
         
         torch.save(model.state_dict(), os.path.join(dir_path, f"latent_transforms/rot{r*90}.pt"))
 
         r += 1
+
+
+
+train(150000, var_preservation=100, nr_epochs=5000)
