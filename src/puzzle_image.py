@@ -1,5 +1,6 @@
 import torch
 import helpers
+import image
 
 pipeline = helpers.pipeline
 
@@ -9,7 +10,9 @@ def optimize(
     prompt_embeds,
     num_inference_steps,
     guidance_scale,
-    LT_data
+    LT_data,
+    prioritize_first,
+    prioritize_start,
 ):
     
     permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
@@ -20,10 +23,18 @@ def optimize(
 
     # 7. Denoising loop
     with pipeline.progress_bar(total=num_inference_steps) as progress_bar:
-        for i in range(num_inference_steps-1):
+        for i in range(num_inference_steps):
 
             t = pipeline.scheduler.timesteps[i:i+1]
             s = pipeline.scheduler.sigmas[i]
+
+            if prioritize_first and s < prioritize_start:
+                noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
+                latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
+
+                if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
+                    progress_bar.update()
+                continue
 
             noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
 
@@ -54,39 +65,14 @@ def optimize(
 
             if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
                 progress_bar.update()
-        
-
-    i = num_inference_steps - 1
-    
-    t = pipeline.scheduler.timesteps[i:i+1]
-    s = pipeline.scheduler.sigmas[i]
-
-    noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
-
-    future_latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
-
-    fut2 = helpers.latents_roundtrip(future_latents[0:1, :, :, :], permutex, permutey)
-    fut1 = helpers.latents_roundtrip(future_latents[1:2, :, :, :], invpermutex, invpermutey)
-
-    latents = 0.5 * (future_latents + torch.cat([fut1, fut2]))
-
-    if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
-        progress_bar.update()
-
 
 
     imgs = []
 
-    decoded = helpers.decode(latents)
-    decoded2 = decoded[0:1, :, permutey, permutex]
-    decoded1 = decoded[1:2, :, invpermutey, invpermutex]
+    decoded = helpers.decode(latents)[0:1, :, :, :]
 
-    # tfd = helpers.latent_transform(latents, LT_data)
-    # tfd_decoded = helpers.decode(tfd)
-    # tfd_decoded1 = tfd_decoded[:, :, invpermutey, invpermutex]
-
-    imgs.append(pipeline.image_processor.postprocess(decoded[0:1, :, :, :], output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(decoded[1:2, :, :, :], output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded, output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded[0:1, :, permutey, permutex], output_type="pil")[0])
     
     return imgs
     
@@ -99,6 +85,8 @@ def generate(
     guidance_scale = 7.0,
     negative_prompt1="",
     negative_prompt2="",
+    prioritize_first=False,
+    prioritize_start=0.3
 ):
     with torch.no_grad():
 
@@ -125,7 +113,8 @@ def generate(
         return optimize(
             latents, prompt_embeds,
             num_inference_steps, guidance_scale,
-            LT_data
+            LT_data,
+            prioritize_first, prioritize_start
         )
 
 
