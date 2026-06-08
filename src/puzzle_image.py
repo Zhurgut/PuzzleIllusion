@@ -25,24 +25,32 @@ def optimize(
             t = pipeline.scheduler.timesteps[i:i+1]
             s = pipeline.scheduler.sigmas[i]
 
-            f_l1 = helpers.latent_transform(latents[0:1, :, :, :], LT_data)
-            f_l2 = helpers.latent_inv_transform(latents[1:2, :, :, :], LT_data)
+            noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
 
-            delta = 0.5
+            # the raw clean image predictions (with artifacts)
+            z0 = latents - s * noise_preds
 
-            avg_latents = (1-delta) * latents + delta * (torch.cat([f_l2, f_l1]))
+            x_j1 = helpers.decode(z0)
+            x_j2 = torch.cat([
+                x_j1[1:2, :, invpermutey, invpermutex],
+                x_j1[0:1, :, permutey, permutex]
+            ])
 
-            noise_preds = helpers.get_noise_pred(avg_latents, prompt_embeds, t, guidance_scale)
+            # equation 7
+            z_hat = helpers.encode2(0.5 * (x_j1 + x_j2))
 
+            residuals = z0 - helpers.encode2(x_j1)
+            res1 = 0.5 * (residuals[0:1] + helpers.apply_view_to_latents(residuals[1:2], invpermutex, invpermutey))
+            res2 = 0.5 * (residuals[1:2] + helpers.apply_view_to_latents(residuals[0:1], permutex, permutey))
             
+            # equation 8
+            res = torch.cat([res1, res2])
 
-            # noise_pred1, noise_pred2 = noise_preds.chunk(2)
-            # noise_pred2 = helpers.latent_inv_transform(noise_pred2, LT_data)
-
-            # final_noise_pred = 0.5 * (noise_pred1 + noise_pred2 + (latents - helpers.latent_inv_transform(latents2, LT_data)))
-            # # final_noise_pred = 0.5 * (noise_pred1 + noise_pred2)
+            z_hat = z_hat + res
+ 
+            final_noise_pred = (latents - z_hat) / s
         
-            latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
+            latents = pipeline.scheduler.step(final_noise_pred, t, latents, return_dict=False)[0]
 
             if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
                 progress_bar.update()
@@ -77,12 +85,8 @@ def optimize(
     # tfd_decoded = helpers.decode(tfd)
     # tfd_decoded1 = tfd_decoded[:, :, invpermutey, invpermutex]
 
-    imgs.append(pipeline.image_processor.postprocess(0.5 * (decoded[0:1, :, :, :] + decoded1), output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(0.5 * (decoded2 + decoded[1:2, :, :, :]), output_type="pil")[0])
     imgs.append(pipeline.image_processor.postprocess(decoded[0:1, :, :, :], output_type="pil")[0])
     imgs.append(pipeline.image_processor.postprocess(decoded[1:2, :, :, :], output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(decoded1, output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(decoded2, output_type="pil")[0])
     
     return imgs
     
