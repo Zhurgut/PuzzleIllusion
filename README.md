@@ -14,10 +14,10 @@ I came across this problem in Matt Parker's video about ["How can a jigsaw have 
 
 Once the puzzle pieces and solutions have been found, an image needs to be created so that both solutions look sensible as well. Ryan Burgert, who was featured in Matt's video, explained how to generate such images using diffusion models. A lot of really cool "diffusion illusions" are presented on their website: [Diffusion Illusions](https://diffusionillusions.com/). ([paper](https://arxiv.org/abs/2312.03817)). 
 
-Since then, diffusion models have improved significantly. Daniel Geng et al. made similar images available on their website: [Visual Anagrams](https://dangeng.github.io/visual_anagrams/). ([paper](https://arxiv.org/abs/2311.17919)). They used the [DeepFloyd IF](https://github.com/deep-floyd/IF) pixel-based diffusion model to produce their amazing results. I highly recommend you check them out!
+Since then, diffusion models have improved significantly. Daniel Geng et al. made similar images available on their website: [Visual Anagrams](https://dangeng.github.io/visual_anagrams/). ([paper](https://arxiv.org/abs/2311.17919)). They used the [DeepFloyd IF](https://github.com/deep-floyd/IF) pixel-based diffusion model to produce their amazing results.
 
-While using pixel based diffusion makes a lot of sense, I was excited about recent *latent* diffusion models. So I set out on the journey of making puzzles with two distinct solutions and generating images for them using the [Stable Diffusion 3.5 Medium](https://github.com/Stability-AI/sd3.5) model.
-
+While using pixel based diffusion makes a lot of sense, I was excited about recent *latent* diffusion models. So I set out on the journey of making puzzles with two distinct solutions and generating images for them using the [Stable Diffusion 3.5 Medium](https://github.com/Stability-AI/sd3.5) model. I adapted parts of the approach described in the [LookingGlass](https://arxiv.org/abs/2504.08902) paper.
+ 
 
 
 ## Gallery
@@ -119,9 +119,10 @@ Puzzles can also be generated using a target image, so that the second solution 
 
 ## How it works
 
-### Puzzle Generation
+The goal is to find a jigsaw puzzle with exactly two solutions. My algorithms repeatedly constructs randomized jigsaw puzzles which have at least two solutions. Many such candidate jigsaw puzzles are generated, while candidates that must have more than two solutions are filtered out. The goal is to find a jigsaw puzzle that is as likely as possible to only have two solutions. Since verifying that indeed no additional solutions exist is the most expensive operation, this step is only performed at the end on the most promising candidate. 
 
-The goal is to find a jigsaw puzzle with exactly two solutions. Rather than creating entirely random jigsaw puzzles, I create randomized jigsaw puzzles which have at least two solutions by construction. 
+
+#### In Detail
 
 I first assign a unique number to each puzzle piece knob/hole, before shuffling the pieces around randomly. 
 
@@ -144,30 +145,7 @@ The resulting set of puzzle pieces has at least two distinct solutions. However 
 
 An additional quality that we want is "no repeated matches", i.e. no two pieces are connected in the same way in both solutions. This constraint is incorporated into the shuffling process. Care is taken so that in the second solution no connection from the first solution exists (unlike in the above example, where 7 connects to (-7) in both solutions). 
 
-This approach facilitates iterating over many candidate solutions quickly. We search for a puzzle where the pieces are as different from each other as possible, as that makes it easier for the puzzle solver to verify the absence of more than two solutions. The largest puzzle I was able to find this way with exactly two solutions has size 10x10. For sizes larger than that, solving the puzzle to verify that there are no other solutions becomes very computationally expensive. 
-
-
-### Generating the images
-
-Generating such visual anagrams using latent diffusion models is challenging, because the transformation which maps one image view to the other is defined in pixel space, while the denoising process happens in latent space. This is an issue because, for example, rotating the latent image representation by 90° does not directly correspond to a rotated version of the pixel image:
-
-
-| | |
-|---|---|
-| <img src="assets/donut.png" width="400"> | <img src="assets/donut90.png" width="400"> |
-| image | image → encode → rotate(90) → decode → rotate(-90) |
-
-Consequently, the transformation between the two image views has to be performed in pixel space. 
-
-Since the VAE can only decode and encode images losslessly when they are clean (i.e. they do not contain noise), we have to denoise images first, before we can apply the transformation between the two image views. 
-
-It becomes necessary to optimize two latent images, $x_t$ and $y_t$, simultaneously, one for each image view. The following image illustrates how the velocity vector for one denoising step for the image $x_t$ is calculated:
-
-<img src="assets/imagegen.png" width="500">
-
-At every step, we denoise and transform the image $y_t$ and treat the resulting image as the target clean image of $x_t$. Finally, we average the velocity vector which moves $x_t$ towards this target with the model's standard noise prediction, to get the direction for the current denoising step. The velocity vector for $y_t$ is computed analogously. 
-
-This method is computationally quite intensive, but I found it necessary in order to get nice textures in the output.
+This approach facilitates iterating over many candidate solutions quickly. We search for a puzzle where the pieces are as different from each other as possible, as that makes it easier for the puzzle solver to verify the absence of more than two solutions. The largest puzzle I was able to find this way with exactly two solutions has size 10x10. For sizes larger than that, solving the puzzle to verify that there are no other solutions becomes very computationally expensive, due to the exponential blow up in complexity. 
 
 ## How to run the code
 
@@ -208,7 +186,6 @@ Jigsaw puzzles can be generated using the `generate_puzzle` function in [src/mai
  
 At larger sizes, e.g. 16x16, it becomes virtually impossible to find jigsaw puzzles without duplicate pieces, is there a more sophisticated/mathematical construction method?
 
-Improve image quality. The two latent images that are denoised have to converge to the same image. While they do get closer to each other during the process, they only converge in the very last step. This last step seems to be a relatively large jump towards the average of the two images in latent space, depending on the prompts. Maybe there is more elegant way of handling these final denoising steps...
 
 
 
