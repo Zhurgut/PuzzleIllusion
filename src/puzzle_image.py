@@ -4,6 +4,34 @@ import image
 
 pipeline = helpers.pipeline
 
+def estimate_clean(latents, s, noise_preds, LT_data):
+        
+        permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
+
+        # the raw clean image predictions (with artifacts)
+        z0 = latents - s * noise_preds
+
+        x_j1 = helpers.decode(z0)
+        x_j2 = torch.cat([
+            x_j1[1:2, :, invpermutey, invpermutex],
+            x_j1[0:1, :, permutey, permutex]
+        ])
+
+        # equation 7
+        z_hat = helpers.encode2(0.5 * (x_j1 + x_j2))
+
+        residuals = z0 - helpers.encode2(x_j1)
+
+        res1 = 0.5 * (residuals[0:1] + helpers.latent_inv_transform(residuals[1:2], LT_data))
+        res2 = 0.5 * (residuals[1:2] + helpers.latent_transform(residuals[0:1], LT_data))
+        
+        # equation 8
+        res = torch.cat([res1, res2])
+
+        z_hat = z_hat + res
+
+        return z_hat
+
 
 def optimize(
     latents, 
@@ -11,68 +39,54 @@ def optimize(
     num_inference_steps,
     guidance_scale,
     LT_data,
-    prioritize_first,
-    prioritize_start,
+    refine_seperately,
+    refine_seperately_amount,
 ):
     
     permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
 
     latents[1:2, :, :, :] = helpers.latent_transform(latents[0:1, :, :, :], LT_data)
 
-    helpers.prepare_scheduler(num_inference_steps, 0)
-
+    i = 0
     # 7. Denoising loop
     with pipeline.progress_bar(total=num_inference_steps) as progress_bar:
-        for i in range(num_inference_steps):
+        while i < num_inference_steps:
+
+            helpers.prepare_scheduler(num_inference_steps, i)
 
             t = pipeline.scheduler.timesteps[i:i+1]
             s = pipeline.scheduler.sigmas[i]
 
-            if prioritize_first and s < prioritize_start:
-                noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
-                latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
-
-                if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
-                    progress_bar.update()
-                continue
-
             noise_preds = helpers.get_noise_pred(latents, prompt_embeds, t, guidance_scale)
 
-            # the raw clean image predictions (with artifacts)
-            z0 = latents - s * noise_preds
-
-            x_j1 = helpers.decode(z0)
-            x_j2 = torch.cat([
-                x_j1[1:2, :, invpermutey, invpermutex],
-                x_j1[0:1, :, permutey, permutex]
-            ])
-
-            # equation 7
-            z_hat = helpers.encode2(0.5 * (x_j1 + x_j2))
-
-            residuals = z0 - helpers.encode2(x_j1)
-            res1 = 0.5 * (residuals[0:1] + helpers.apply_view_to_latents(residuals[1:2], invpermutex, invpermutey))
-            res2 = 0.5 * (residuals[1:2] + helpers.apply_view_to_latents(residuals[0:1], permutex, permutey))
+            if refine_seperately and s < refine_seperately_amount:
+                latents = pipeline.scheduler.step(noise_preds, t, latents, return_dict=False)[0]
+                
+                i += 1
+                progress_bar.update()
+                continue
             
-            # equation 8
-            res = torch.cat([res1, res2])
-
-            z_hat = z_hat + res
- 
+            z_hat = estimate_clean(latents, s, noise_preds, LT_data)
+            
             final_noise_pred = (latents - z_hat) / s
-        
+            
             latents = pipeline.scheduler.step(final_noise_pred, t, latents, return_dict=False)[0]
 
-            if i == len(pipeline.scheduler.timesteps) - 1 or ((i + 1) > 0 and (i + 1) % pipeline.scheduler.order == 0):
-                progress_bar.update()
-
-
+            i += 1
+            progress_bar.update()
+            
+            
     imgs = []
 
-    decoded = helpers.decode(latents)[0:1, :, :, :]
+    decoded = helpers.decode(latents)
 
-    imgs.append(pipeline.image_processor.postprocess(decoded, output_type="pil")[0])
-    imgs.append(pipeline.image_processor.postprocess(decoded[0:1, :, permutey, permutex], output_type="pil")[0])
+    decoded0 = decoded[0:1, :, :, :]
+    decoded1 = decoded[1:2, :, :, :]
+
+    imgs.append(pipeline.image_processor.postprocess(decoded0, output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded0[:, :, permutey, permutex], output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded1, output_type="pil")[0])
+    imgs.append(pipeline.image_processor.postprocess(decoded1[:, :, invpermutey, invpermutex], output_type="pil")[0])
     
     return imgs
     
@@ -85,10 +99,15 @@ def generate(
     guidance_scale = 7.0,
     negative_prompt1="",
     negative_prompt2="",
-    prioritize_first=False,
-    prioritize_start=0.3
+    refine_seperately=False,
+    refine_seperately_amount=0.3,
+    seed=None
 ):
     with torch.no_grad():
+
+        if seed is not None:
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
 
         prompt_embeds = helpers.encode_prompts([prompt1, prompt2], [negative_prompt1, negative_prompt2])
 
@@ -114,7 +133,7 @@ def generate(
             latents, prompt_embeds,
             num_inference_steps, guidance_scale,
             LT_data,
-            prioritize_first, prioritize_start
+            refine_seperately, refine_seperately_amount,
         )
 
 
