@@ -73,10 +73,10 @@ function is_below(px, py, ts, spline_points, spline)
 end
 
 function draw_path!(io, points)
-    for i = 1:length(points)-1
+    for i = 1:(length(points)-1)
         p = points[i]
         t = points[i+1]
-        println(io, "\\draw ($(p.x),$(p.y)) -- ($(t.x), $(t.y));")
+        println(io, "\\draw[ultra thin] ($(p.x),$(p.y)) -- ($(t.x), $(t.y));")
     end
 end
 
@@ -146,7 +146,7 @@ end
 # [2 2 2 4 4 4]
 function get_piece_map(puzzle, S, splines)
     h, w = size(puzzle)
-    piece_index = reshape(1:h*w, h, w)
+    piece_index = reshape(1:(h*w), h, w)
     map = repeat(piece_index, inner=(S, S))
     ts = 0:0.01:1
     spline_points = [spline.(ts) for spline in splines]
@@ -161,7 +161,7 @@ function get_piece_map(puzzle, S, splines)
             spl_points = spline_points[abs(piece.right.id)]
 
             R_off, C_off = S * (r - 1), S * (c - 1)
-            out = @view(map[R_off+1:R_off+S, C_off+1:C_off+2S])
+            out = @view(map[(R_off+1):(R_off+S), (C_off+1):(C_off+2S)])
 
 
             for mr = 1:S, mc = 1:2S
@@ -203,7 +203,7 @@ function get_piece_map(puzzle, S, splines)
             spl_points = spline_points[abs(piece.bottom.id)]
 
             R_off, C_off = S * (r - 1), S * (c - 1)
-            out = @view(map[R_off+1:R_off+2S, C_off+1:C_off+S])
+            out = @view(map[(R_off+1):(R_off+2S), (C_off+1):(C_off+S)])
 
             for mr = 1:2S, mc = 1:S
 
@@ -245,7 +245,7 @@ function downsample_rotation_map(rot_map)
     out = zeros(Int, H ÷ 8, W ÷ 8)
     h, w = size(out)
     for r = 1:h, c = 1:w
-        tile = rot_map[(r-1)*8+1:8r, (c-1)*8+1:8c]
+        tile = rot_map[((r-1)*8+1):8r, ((c-1)*8+1):8c]
         votes = [sum(tile .== i) for i = 0:3]
         out[r, c] = argmax(votes) - 1
     end
@@ -279,7 +279,7 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
 
         # copy piece indeces from map, and origin x and y coordinates into array
         piece_index_array .= false
-        for i = 1:2BORDER+S, j = 1:2BORDER+S
+        for i = 1:(2BORDER+S), j = 1:(2BORDER+S)
             i2, j2 = (r - 1) * S + i - BORDER, (c - 1) * S + j - BORDER
             if 1 <= i2 <= H && 1 <= j2 <= W
                 piece_index_array[i, j] = map[i2, j2] == idx
@@ -301,7 +301,7 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
                         piece_array_x = rotr90(piece_array_x, r)
                         piece_array_y = rotr90(piece_array_y, r)
 
-                        for i = 1:2BORDER+S, j = 1:2BORDER+S
+                        for i = 1:(2BORDER+S), j = 1:(2BORDER+S)
                             i2, j2 = (r2 - 1) * S + i - BORDER, (c2 - 1) * S + j - BORDER
                             if piece_index_array[i, j]
                                 out_x[i2, j2] = piece_array_x[i, j]
