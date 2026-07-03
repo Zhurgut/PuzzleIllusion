@@ -8,7 +8,7 @@ function random_connector(;
     max_vertical_offset=0.03,
     min_vertical_offset=0.005,
     outer_slide=0.05,
-    radius=0.025,
+    radius=0.024,
 )
 
     vertical_off1 = min_vertical_offset + (max_vertical_offset - min_vertical_offset) * rand()
@@ -26,11 +26,11 @@ function random_connector(;
     # The spline will go through a random point on the circle with center 
     # at the points and radius
     knob_points = [
-        (0.407, 0.075 - vertical_off1),
-        (0.375, 0.2 - vertical_off1),
+        (0.406, 0.075 - vertical_off1),
+        (0.374, 0.2 - vertical_off1),
         (0.5, 0.275 - vertical_off1),
-        (0.625, 0.2 - vertical_off2),
-        (0.593, 0.075 - vertical_off2),
+        (0.626, 0.2 - vertical_off2),
+        (0.594, 0.075 - vertical_off2),
     ]
 
     points = zeros(2, 11)
@@ -40,7 +40,7 @@ function random_connector(;
     for (i, c) in enumerate(knob_points)
         if i ∈ [4, 8]
             # a bit of tighter radius around the neck of the knob
-            points[:, i+3] .= c .+ 0.7radius .* point(2π * rand())
+            points[:, i+3] .= c .+ 0.01 .* point(2π * rand())
         else
             points[:, i+3] .= c .+ radius .* point(2π * rand())
         end
@@ -55,7 +55,31 @@ function random_connector(;
     # p = spl.(X)
     # plot(map(x->x[1], p), map(x->x[2], p), ratio=1, ylims=(-0.2, 0.4), xlims=(-0.1, 1.1)) |> display
 
-    return spl
+    return (spline=spl, points=[PicturaShapes.Point(points[1, i], points[2, i]) for i in 3:9])
+end
+
+function random_connectors(n)
+    randoms = [random_connector() for i=1:2n]
+    splines = [r.spline for r in randoms]
+    points = [r.points for r in randoms]
+    N = length(randoms)
+
+    distance(ps1, ps2) = sum(PicturaShapes.sdf(ps1[i], ps2[i]) for i in eachindex(ps1))
+
+    dists = zeros(Float64, N, N)
+    for i=1:N, j=(i+1):N
+        dists[i, j] = distance(points[i], points[j])
+    end
+    mx = argmax(dists)
+    out_indeces = [mx.I[1], mx.I[2]]
+
+    while length(out_indeces) < n
+        # add a connector which is different from the already selected ones
+        min_dists = [minimum([distance(points[j], points[i]) for i in out_indeces]) for j in 1:N]
+        push!(out_indeces, argmax(min_dists))
+    end
+
+    return splines[out_indeces]
 end
 
 # tells if (px, py) is below the curve defined by the knob spline

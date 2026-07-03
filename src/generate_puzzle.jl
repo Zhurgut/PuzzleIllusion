@@ -29,7 +29,7 @@ function Piece(t::Integer, r::Integer, b::Integer, l::Integer)
     Piece(ct, cr, cb, cl)
 end
 
-Piece(;l=0,b=0,r=0,t=0) = Piece(t,r,b,l)
+Piece(; l=0, b=0, r=0, t=0) = Piece(t, r, b, l)
 
 to_tuple(p::Piece) = (p.top, p.right, p.bottom, p.left)
 
@@ -44,7 +44,7 @@ function allrotations(p::Piece)
     return (p, p2, p3, p4)
 end
 
-rotate(p, amt) = allrotations(p)[mod(amt, 4) + 1]
+rotate(p, amt) = allrotations(p)[mod(amt, 4)+1]
 
 function Base.:(==)(p1::Piece, p2::Piece)
     rots = allrotations(p2)
@@ -59,7 +59,7 @@ end
 function rand_perm!(array)
     n = length(array)
     array .= 1:n
-    for i=1:n
+    for i = 1:n
         j = rand(1:n)
         array[i], array[j] = array[j], array[i]
     end
@@ -72,7 +72,7 @@ let perm::Vector{Int} = collect(1:10)
 
     global function edge_perm(w, h)
         nr_edges = 2w + 2h - 4
-        corners = (1, w, w+h-1, 2w+h-2)
+        corners = (1, w, w + h - 1, 2w + h - 2)
         resize!(perm, nr_edges)
         p = rand_perm!(perm)
 
@@ -88,21 +88,25 @@ let perm::Vector{Int} = collect(1:10)
             p[corners[i]], p[idx] = p[idx], p[corners[i]]
         end
 
-        prev(i, nr_edges) = mod(i-2, nr_edges) + 1
+        prev(i, nr_edges) = mod(i - 2, nr_edges) + 1
         next(i, nr_edges) = mod(i, nr_edges) + 1
-        value_fits_at_position(v, i, p, N) = prev(v, N) != p[prev(i, N)] && next(v, N) != p[next(i, N)] 
+        value_fits_at_position(v, i, p, N) = prev(v, N) != p[prev(i, N)] && next(v, N) != p[next(i, N)]
 
         # make sure edges all have different connections
         for i = 1:nr_edges
-            if i ∈ corners continue end
+            if i ∈ corners
+                continue
+            end
 
             if !value_fits_at_position(p[i], i, p, nr_edges)
                 # value at p[i] needs to go somewhere else
                 success = false
 
-                for j=1:nr_edges
-                    k = mod(i+j-1, nr_edges) + 1
-                    if k ∈ corners continue end
+                for j = 1:nr_edges
+                    k = mod(i + j - 1, nr_edges) + 1
+                    if k ∈ corners
+                        continue
+                    end
 
                     if value_fits_at_position(p[i], k, p, nr_edges) && value_fits_at_position(p[k], i, p, nr_edges)
                         p[i], p[k] = p[k], p[i]
@@ -126,18 +130,18 @@ end
 
 function default_puzzle!(m)
     h, w = size(m)
-    row_off = 2w-1
-    for c=1:w, r=1:h
-        p = Piece(w + c-1 + (r-2)*row_off, c + (r-1)*row_off, w + c-1 + (r-1)*row_off, c-1 + (r-1)*row_off)
+    row_off = 2w - 1
+    for c = 1:w, r = 1:h
+        p = Piece(w + c - 1 + (r - 2) * row_off, c + (r - 1) * row_off, w + c - 1 + (r - 1) * row_off, c - 1 + (r - 1) * row_off)
         m[r, c] = Piece(invert(p.top), p.right, p.bottom, invert(p.left))
     end
-    for c=1:w
+    for c = 1:w
         p = m[1, c]
         m[1, c] = Piece(Edge(), p.right, p.bottom, p.left)
         p = m[end, c]
         m[end, c] = Piece(p.top, p.right, Edge(), p.left)
     end
-    for r=1:h
+    for r = 1:h
         p = m[r, 1]
         m[r, 1] = Piece(p.top, p.right, p.bottom, Edge())
         p = m[r, end]
@@ -152,26 +156,27 @@ default_puzzle(w, h) = default_puzzle!(Matrix{Piece}(undef, h, w))
 
 function from_edge_to_cartesian(e, w, h)
     # return row_idx, col_idx, rotation
-    if 1 <= e <= w-1
+    if 1 <= e <= w - 1
         return (1, e, 1)
-    elseif w <= e <= w+h-2
-        return (e-w+1, w, 2)
-    elseif w+h-1 <= e <= 2w+h-3
-        return (h, w - (e - (w+h-1)), 3)
-    else 2w+h-2 <= e <= 2(w+h)-4
-        return (h - (e - (2w+h-2)), 1, 4)
+    elseif w <= e <= w + h - 2
+        return (e - w + 1, w, 2)
+    elseif w + h - 1 <= e <= 2w + h - 3
+        return (h, w - (e - (w + h - 1)), 3)
+    else
+        2w + h - 2 <= e <= 2(w + h) - 4
+        return (h - (e - (2w + h - 2)), 1, 4)
     end
 end
 
 function piece_fits(p, r, c, puzzle)
     above, toright, toleft, below = puzzle[r-1, c], puzzle[r, c+1], puzzle[r, c-1], puzzle[r+1, c]
-    return is_fit(above.bottom, p.top)  && is_fit(toright.left, p.right) && 
+    return is_fit(above.bottom, p.top) && is_fit(toright.left, p.right) &&
            is_fit(toleft.right, p.left) && is_fit(below.top, p.bottom)
 end
 
 function piece_fits_nowhere(p, r, c, puzzle)
     above, toright, toleft, below = puzzle[r-1, c], puzzle[r, c+1], puzzle[r, c-1], puzzle[r+1, c]
-    return !is_fit(above.bottom, p.top)  && !is_fit(toright.left, p.right) && 
+    return !is_fit(above.bottom, p.top) && !is_fit(toright.left, p.right) &&
            !is_fit(toleft.right, p.left) && !is_fit(below.top, p.bottom)
 end
 
@@ -180,32 +185,32 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
 
     global function random_puzzle!(sol1, out)
         sol1 = default_puzzle!(sol1)
-        fill!(out, Piece(0,0,0,0))
-        h,w = size(sol1)
-        
+        fill!(out, Piece(0, 0, 0, 0))
+        h, w = size(sol1)
+
         # edge pieces
         edges_perm = edge_perm(w, h)
-        
+
         for (i, e) in enumerate(edges_perm)
             in_r, in_c, in_rot = from_edge_to_cartesian(i, w, h)
             out_r, out_c, out_rot = from_edge_to_cartesian(e, w, h)
-            
+
             out[out_r, out_c] = rotate(sol1[in_r, in_c], out_rot - in_rot)
         end
 
         # filling pieces
-        resize!(filling_perm, (w-2)*(h-2))
+        resize!(filling_perm, (w - 2) * (h - 2))
         rand_perm!(filling_perm)
         for (i, e) in enumerate(filling_perm)
-            in_r, in_c = (i-1) ÷ (w-2) + 1, (i-1) % (w-2) + 1
+            in_r, in_c = (i - 1) ÷ (w - 2) + 1, (i - 1) % (w - 2) + 1
             piece = sol1[in_r+1, in_c+1]
-            out_r, out_c = (e-1) ÷ (w-2) + 1, (e-1) % (w-2) + 1
-            
+            out_r, out_c = (e - 1) ÷ (w - 2) + 1, (e - 1) % (w - 2) + 1
+
             success = false
             init_r = rand(1:4)
-            for r=0:3
+            for r = 0:3
                 rotated = rotate(piece, init_r + r)
-                if piece_fits_nowhere(rotated, out_r+1, out_c+1, out)
+                if piece_fits_nowhere(rotated, out_r + 1, out_c + 1, out)
                     out[out_r+1, out_c+1] = rotated
                     success = true
                     break
@@ -213,7 +218,7 @@ let filling_perm::Vector{Int} = zeros(Int, 10)
             end
             if !success
                 println("fail")
-                return random_puzzle(w,h)
+                return random_puzzle(w, h)
             end
         end
 
@@ -228,10 +233,10 @@ let map::Vector{Int} = zeros(Int, 1024)
 
     global function get_mapping!(graph)
         n = (size(graph, 1) - 1) ÷ 2
-        resize!(map, 2n+1)
+        resize!(map, 2n + 1)
         fill!(map, 0)
 
-        for connection_id=1:n
+        for connection_id = 1:n
             if !any(graph)
                 break
             end
@@ -264,7 +269,7 @@ let map::Vector{Int} = zeros(Int, 1024)
 
             graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
         end
-        
+
         map
     end
 end
@@ -273,15 +278,15 @@ end
 let graph::Matrix{Bool} = zeros(Bool, 1024, 1024)
 
     global function resolve_connections!(def_sol, sol2)
-        n = def_sol[end, end].left.id |> Int |> abs 
-        if size(graph) != (2n+1, 2n+1)
-            graph = zeros(Bool, 2n+1, 2n+1)
+        n = def_sol[end, end].left.id |> Int |> abs
+        if size(graph) != (2n + 1, 2n + 1)
+            graph = zeros(Bool, 2n + 1, 2n + 1)
         else
             fill!(graph, false)
         end
         h, w = size(def_sol)
 
-        for c=1:w, r=1:h
+        for c = 1:w, r = 1:h
             d = def_sol[r, c]
             s = sol2[r, c]
             if r < h
@@ -323,22 +328,22 @@ let graph::Matrix{Bool} = zeros(Bool, 1024, 1024)
         end
 
         mapping = get_mapping!(graph)
-        
-        for c=1:w, r=1:h
+
+        for c = 1:w, r = 1:h
             p = def_sol[r, c]
             def_sol[r, c] = Piece(
-                Connection(mapping[p.top.id + n + 1]),
-                Connection(mapping[p.right.id + n + 1]),
-                Connection(mapping[p.bottom.id + n + 1]),
-                Connection(mapping[p.left.id + n + 1]),
+                Connection(mapping[p.top.id+n+1]),
+                Connection(mapping[p.right.id+n+1]),
+                Connection(mapping[p.bottom.id+n+1]),
+                Connection(mapping[p.left.id+n+1]),
             )
 
             p = sol2[r, c]
             sol2[r, c] = Piece(
-                Connection(mapping[p.top.id + n + 1]),
-                Connection(mapping[p.right.id + n + 1]),
-                Connection(mapping[p.bottom.id + n + 1]),
-                Connection(mapping[p.left.id + n + 1]),
+                Connection(mapping[p.top.id+n+1]),
+                Connection(mapping[p.right.id+n+1]),
+                Connection(mapping[p.bottom.id+n+1]),
+                Connection(mapping[p.left.id+n+1]),
             )
         end
 
@@ -349,7 +354,7 @@ end
 
 function pieces_are_unique(puzzle)
     n = length(puzzle)
-    for i = 1:n, j=i+1:n
+    for i = 1:n, j = (i+1):n
         if puzzle[i] == puzzle[j]
             return false
         end
@@ -368,7 +373,7 @@ function rot_symmetric_pieces_exist(puzzle)
     return false
 end
 
-let pairs::Vector{NTuple{6, Int16}} = []
+let pairs::Vector{NTuple{6,Int16}} = []
 
     function tuple(p1, p2)
         Int16.((p1.left.id, p1.top.id, p2.top.id, p2.right.id, p2.bottom.id, p1.bottom.id))
@@ -377,11 +382,11 @@ let pairs::Vector{NTuple{6, Int16}} = []
     global function same_pair_exists(puzzle)
         h, w = size(puzzle)
         empty!(pairs)
-        for c=1:w-1, r=1:h
+        for c = 1:(w-1), r = 1:h
             p1 = puzzle[r, c]
             p2 = puzzle[r, c+1]
 
-            for r1=1:4, r2=1:4
+            for r1 = 1:4, r2 = 1:4
                 # check that each pair cannot be reassembled differently into itself
                 u1, u2 = rotate(p2, r1), rotate(p1, r2)
                 if is_fit(u1.right, u2.left)
@@ -390,15 +395,15 @@ let pairs::Vector{NTuple{6, Int16}} = []
                     end
                 end
             end
-            
+
             push!(pairs, tuple(p1, p2))
             push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
-        for c=1:w, r=1:h-1
+        for c = 1:w, r = 1:(h-1)
             p1 = rotate(puzzle[r, c], -1)
             p2 = rotate(puzzle[r+1, c], -1)
 
-            for r1=1:4, r2=1:4
+            for r1 = 1:4, r2 = 1:4
                 u1, u2 = rotate(p2, r1), rotate(p1, r2)
                 if is_fit(u1.right, u2.left)
                     if tuple(p1, p2) == tuple(u1, u2)
@@ -406,7 +411,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
                     end
                 end
             end
-            
+
             push!(pairs, tuple(p1, p2))
             push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
@@ -415,7 +420,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
         sort!(pairs, alg=QuickSort)
 
         n = length(pairs)
-        for i=1:n-1
+        for i = 1:(n-1)
             if pairs[i] == pairs[i+1]
                 return true
             end
@@ -440,22 +445,26 @@ function all_solutions!(solution, pieces, next_r, next_c, solutions; start_time=
     required_bottom = nothing
     required_right = nothing
     required_left = nothing
-    
+
     required_left = next_c == 1 ? Edge() : invert(solution[next_r, next_c-1].right)
     required_top = next_r == 1 ? Edge() : invert(solution[next_r-1, next_c].bottom)
-    if next_c == w required_right = Edge() end
-    if next_r == h required_bottom = Edge() end
+    if next_c == w
+        required_right = Edge()
+    end
+    if next_r == h
+        required_bottom = Edge()
+    end
 
     for i in eachindex(pieces)
         p = pieces[i]
         for r = allrotations(p)
-            if r.left == required_left && 
-                r.top == required_top && 
-                (isnothing(required_right) || r.right == required_right) && 
-                (isnothing(required_bottom) || r.bottom == required_bottom)
+            if r.left == required_left &&
+               r.top == required_top &&
+               (isnothing(required_right) || r.right == required_right) &&
+               (isnothing(required_bottom) || r.bottom == required_bottom)
 
                 solution[next_r, next_c] = r
-                
+
                 if (next_r, next_c) == (h, w)
                     push!(solutions, copy(solution))
                     continue
@@ -495,7 +504,7 @@ let count::Vector{Int} = zeros(64)
         h, w = size(puzzle)
         fill!(count, 0)
         mx = 0
-        for c=1:w, r=1:h
+        for c = 1:w, r = 1:h
             i = abs(puzzle[r, c].top.id)
             mx = max(mx, i)
             i == 0 || (count[i] += 1)
@@ -512,7 +521,7 @@ let count::Vector{Int} = zeros(64)
             mx = max(mx, i)
             i == 0 || (count[i] += 1)
         end
-        
+
         out = @view(count[1:mx])
         sort!(out)
 
@@ -525,7 +534,7 @@ end
 function nr_connections_inside(puzzle)
     s = Set(Int[])
     h, w = size(puzzle)
-    for c=2:w-1, r=2:h-1
+    for c = 2:(w-1), r = 2:(h-1)
         push!(s, abs(puzzle[r, c].top.id))
         push!(s, abs(puzzle[r, c].right.id))
         push!(s, abs(puzzle[r, c].bottom.id))
@@ -540,22 +549,22 @@ include("draw_puzzle.jl")
 function save_puzzle(sol1, sol2, F=nothing)
     H, W = size(sol1)
     nr_connectors = length(nr_connections(sol1))
-    connectors = [random_connector() for i in 1:nr_connectors]
+    connectors = random_connectors(nr_connectors)
 
     out_folder = joinpath(@__DIR__, "..", "puzzles", "$(W)x$(H)")
     mkpath(out_folder)
 
     # save print.pdf 
-    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors)
+    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors, scale=10)
 
     # save permutation matrices for image generation
     if isnothing(F)
-        ub = sqrt(256 / (H*W))
+        ub = sqrt(256 / (H * W))
         M = min(H, W)
         candidates = [fm for fm in floor(Int, ub*M):-1:1]
         for c in candidates
             f = c / M
-            if isinteger(f*W) && isinteger(f*H) && isinteger(f*64)
+            if isinteger(f * W) && isinteger(f * H) && isinteger(f * 64)
                 save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, f)
                 break
             end
@@ -569,17 +578,16 @@ function save_puzzle(sol1, sol2, F=nothing)
         show(io, "text/plain", sol1)
         println(io)
         show(io, "text/plain", sol2)
-    end 
+    end
 end
 
-entropy(probs) = -sum((p * log(p) for p in probs))
+entropy(probs) = -sum((p * log2(p) for p in probs))
 
 # say that a corner of a puzzle piece is one half of the piece when cut diagonally
 # calculate the entropy of a puzzle by computing the entropy of distribution of such piece corners
 # the higher the entropy, the fewer options the all_solutions! function will have at any step
 # the easier it is to verify the absence of extra solutions
-let counts::Matrix{Int} = zeros(Int, 60, 60),
-    probabilities::Vector{Float64} = zeros(200)
+let counts::Matrix{Int} = zeros(Int, 60, 60), probabilities::Vector{Float64} = zeros(200)
 
     global function piece_entropy(puzzle)
         fill!(counts, 0)
@@ -588,12 +596,12 @@ let counts::Matrix{Int} = zeros(Int, 60, 60),
         mx = 0
         for piece in puzzle
             for r in allrotations(piece)
-                counts[r.top.id + S, r.right.id + S] += 1
+                counts[r.top.id+S, r.right.id+S] += 1
                 mx = max(mx, abs(r.top.id))
             end
         end
 
-        counts2 = @view(counts[-mx+S:mx+S, -mx+S:mx+S])
+        counts2 = @view(counts[(-mx+S):(mx+S), (-mx+S):(mx+S)])
         empty!(probabilities)
 
         nr_pairs = 0
@@ -604,10 +612,10 @@ let counts::Matrix{Int} = zeros(Int, 60, 60),
             end
         end
 
-        h,w = size(puzzle)
+        h, w = size(puzzle)
 
         for i in eachindex(probabilities)
-            probabilities[i] *= (1 / (h*w*4))
+            probabilities[i] *= (1 / (h * w * 4))
         end
 
         @assert sum(probabilities) ≈ 1
@@ -640,10 +648,18 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
         resolve_connections!(sol1, sol2) # use as many different connectors as possible
 
         # some necessary conditions for having exactly 2 solutions:
-        if !pieces_are_unique(sol1) continue end # no duplicate pieces
-        if rot_symmetric_pieces_exist(sol1) continue end # no piece is rotationally symmetric
-        if same_pair_exists(sol1) continue end # all pairs of pieces must not be rotationally symmetric
-        if same_pair_exists(sol2) continue end # and no two pairs of pieces must be the same
+        if !pieces_are_unique(sol1)
+            continue
+        end # no duplicate pieces
+        if rot_symmetric_pieces_exist(sol1)
+            continue
+        end # no piece is rotationally symmetric
+        if same_pair_exists(sol1)
+            continue
+        end # all pairs of pieces must not be rotationally symmetric
+        if same_pair_exists(sol2)
+            continue
+        end # and no two pairs of pieces must be the same
 
         # otherwise we have a candidate which likely only has 2 solutions
         # increase likelyhood by choosing the solution which maximizes "puzzle entropy"
@@ -660,7 +676,7 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
 
             println("$(round(entropy, digits=13)); total: $(nr_cs), inner: $(nr_inner_cs), most: $(most_prominent)")
         end
-        
+
     end
 
     if check
@@ -668,7 +684,7 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
         if success
             println("SUCCESS: puzzle has exactly 2 solutions! :D")
         else
-            println("FAIL: could not verify that the puzzle has only 2 solutions🤷") 
+            println("FAIL: could not verify that the puzzle has only 2 solutions🤷")
             println("$(length(solutions)) solutions were found in the given time.")
             println("pieces are unique: ", pieces_are_unique(best1))
             println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
@@ -678,7 +694,7 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
     if save
         save_puzzle(best1, best2, out_scale)
     end
-    
+
     best1, best2
 
 end
