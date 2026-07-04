@@ -546,7 +546,7 @@ end
 
 include("draw_puzzle.jl")
 
-function save_puzzle(sol1, sol2, F=nothing)
+function save_puzzle(sol1, sol2; has_border=true, F=nothing, target_border=0.5, target_size=1024*1024)
     H, W = size(sol1)
     nr_connectors = length(nr_connections(sol1))
     connectors = random_connectors(nr_connectors)
@@ -554,24 +554,12 @@ function save_puzzle(sol1, sol2, F=nothing)
     out_folder = joinpath(@__DIR__, "..", "puzzles", "$(W)x$(H)")
     mkpath(out_folder)
 
-    # save print.pdf 
-    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors, scale=10)
 
-    # save permutation matrices for image generation
-    if isnothing(F)
-        ub = sqrt(256 / (H * W))
-        M = min(H, W)
-        candidates = [fm for fm in floor(Int, ub*M):-1:1]
-        for c in candidates
-            f = c / M
-            if isinteger(f * W) && isinteger(f * H) && isinteger(f * 64)
-                save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, f)
-                break
-            end
-        end
-    else
-        save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, F)
-    end
+    sizes = save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, has_border, F, target_border, target_size)
+
+    # save print.pdf 
+    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors, sizes)
+
 
     # save text file of puzzle layout with connector indices
     open(joinpath(out_folder, "puzzle.txt"), "w") do io
@@ -692,7 +680,7 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
     end
 
     if save
-        save_puzzle(best1, best2, out_scale)
+        save_puzzle(best1, best2, F=out_scale)
     end
 
     best1, best2

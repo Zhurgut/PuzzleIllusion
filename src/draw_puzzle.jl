@@ -76,7 +76,7 @@ function random_connectors(n)
     while length(out_indeces) < n
         # add a connector which is different from the already selected ones
         min_dists = [minimum([distance(points[j], points[i]) for i in out_indeces]) for j in 1:N]
-        push!(out_indeces, argmax(min_dists))
+        insert!(out_indeces, rand(1:(length(out_indeces)+1)), argmax(min_dists))
     end
 
     return splines[out_indeces]
@@ -126,11 +126,20 @@ function draw_connector!(io, r, c, side, std_points, male=false)
     draw_path!(io, points)
 end
 
-function draw_puzzle(puzzle, draw_points)
+function draw_border!(io, h, w, sizes)
+    println(io, "\\draw[ultra thin] (0,0) -- (0, $h) -- ($w, $h) -- ($w, 0) -- (0,0);")
+
+    s = sizes
+    tl = (x=(-s.border_w / s.S), y=(-s.border_h / s.S))
+    br = (x=w + s.border_w2 / s.S, y=h + s.border_h2 / s.S)
+    println(io, "\\draw[ultra thin] ($(tl.x), $(tl.y)) -- ($(tl.x), $(br.y)) -- ($(br.x), $(br.y)) -- ($(br.x), $(tl.y)) -- ($(tl.x), $(tl.y));")
+end
+
+function draw_puzzle(puzzle, draw_points, pixel_sizes)
     h, w = size(puzzle)
     io = IOBuffer()
-    println(io, "\\draw (0,0) -- (0, $h) -- ($w, $h) -- ($w, 0) -- (0,0);")
-    println(io, "\\draw (-1, -1) -- (-1, $h+1) -- ($w+1, $h+1) -- ($w+1, -1) -- (-1,-1);")
+
+    draw_border!(io, h, w, pixel_sizes)
 
     for c = 1:w, r = 1:h
         piece = puzzle[r, c]
@@ -146,16 +155,16 @@ function draw_puzzle(puzzle, draw_points)
 end
 
 # out_type can also be SVG, TEX or TIKZ
-function draw_puzzles(puzzle, puzzle2, out_name::String, connectors, out_type=PDF)
+function draw_puzzles(puzzle, puzzle2, out_name::String, connectors, sizes; out_type=PDF)
     # mirror connectors here, because later we are going to do yscale=-1, which is going to mirror them back
     draw_points = [
         [Point(1 - p[1], p[2]) for p in connector.(0:0.01:1)] for connector in connectors
     ]
 
-    picture = draw_puzzle(puzzle, draw_points)
+    picture = draw_puzzle(puzzle, draw_points, sizes)
     save(out_type(out_name * "1"), picture)
 
-    picture = draw_puzzle(puzzle2, draw_points)
+    picture = draw_puzzle(puzzle2, draw_points, sizes)
     save(out_type(out_name * "2"), picture)
 end
 
@@ -278,10 +287,10 @@ function downsample_rotation_map(rot_map)
 end
 
 
-function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, F=1.0)
+
+function create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
     h, w = size(puzzle)
-    S = Int(64 * F)
-    H, W = S * h, S * w
+
     def_y = reshape(repeat(1:H, W), H, W)
     def_x = transpose(reshape(repeat(1:W, H), W, H))
 
@@ -343,18 +352,117 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
         end
     end
 
-    CSV.write(joinpath(out_folder, "perm_x.csv"), Tables.table(out_x), writeheader=false)
-    CSV.write(joinpath(out_folder, "perm_y.csv"), Tables.table(out_y), writeheader=false)
-
     perm = CartesianIndex.(out_y, out_x)
     rot_map1 = zeros(Int, H, W)
     rot_map1[perm] .= (4 .- rot_map2) .% 4
 
-    rot2 = downsample_rotation_map(rot_map2)
+    return out_x, out_y, rot_map1, rot_map2
+end
+
+
+function get_best_puzzle_size(w, h, target_border, target_size)
+    max_S = target_size / ((w+2*(target_border-0.1))*(h+2*(target_border-0.1))) |> sqrt |> ceil |> Int
+    min_S = target_size / ((w+2*(target_border+0.1))*(h+2*(target_border+0.1))) |> sqrt |> floor |> Int
+    scores = []
+    for S=min_S:max_S
+        W, H = S .* (w+2*target_border, h+2*target_border)
+        W, H = round.((W, H) ./ 64) .* 64
+        bh = 0.5 * (H - h*S) / S
+        bw = 0.5 * (W - w*S) / S
+        println("$W, $H, $bw, $bh")
+        score = abs(bh - target_border) + abs(bw - target_border) + abs(bw - bh)
+        push!(scores, score)
+    end
+
+    S = (min_S:max_S)[argmin(scores)]
+    puzzle_W, puzzle_H = S .* (w, h)
+
+    W, H = S .* (w+2*target_border, h+2*target_border)
+    total_W, total_H = round.(Int, (W, H) ./ 64) .* 64
+
+    border_w = floor(Int, (total_W - puzzle_W) / 2)
+    border_w2 = total_W - puzzle_W - border_w
+
+    border_h = floor(Int, (total_H - puzzle_H) / 2)
+    border_h2 = total_H - puzzle_H - border_h
+
+    return (
+        puzzle_W=puzzle_W,
+        puzzle_H=puzzle_H,
+        total_W=total_W,
+        total_H=total_H,
+        border_w=border_w,
+        border_w2=border_w2,
+        border_h=border_h,
+        border_h2=border_h2,
+        S=S
+    )
+end
+
+function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, has_border, F, target_border, target_size)
+    h, w = size(puzzle)
+    sizes = nothing
+
+    if has_border
+        sizes = get_best_puzzle_size(w, h, target_border, target_size)
+        s = sizes
+        out_x, out_y, rot_map1, rot_map2 = create_permutation_with_round_knobs(puzzle, sol, connectors, s.puzzle_W, s.puzzle_H, s.S)
+
+        # add the border
+        H, W = s.total_H, s.total_W
+        def_y = reshape(repeat(1:H, W), H, W)
+        def_x = transpose(reshape(repeat(1:W, H), W, H))
+
+        def_y[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_y .+ s.border_h
+        def_x[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_x .+ s.border_w
+
+        out_x, out_y = def_x, def_y
+
+        rb1 = zeros(Int, s.total_H, s.total_W)
+        rb1[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map1
+        rb2 = zeros(Int, s.total_H, s.total_W)
+        rb2[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map2
+
+        rot_map1, rot_map2 = rb1, rb2
+    else
+        if isnothing(F)
+            ub = sqrt(256 / (h * w))
+            M = min(h, w)
+            candidates = [fm for fm in floor(Int, ub*M):-1:1]
+            for c in candidates
+                f = c / M
+                if isinteger(f * W) && isinteger(f * H) && isinteger(f * 64)
+                    F=f
+                    break
+                end
+            end
+        end
+
+        S = Int(64 * F)
+        H, W = S .* (h, w)
+        out_x, out_y, rot_map1, rot_map2 = create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
+
+        sizes = (
+            puzzle_W=W,
+            puzzle_H=H,
+            total_W=W,
+            total_H=H,
+            border_w=0,
+            border_w2=0,
+            border_h=0,
+            border_h2=0,
+            S=S
+        )
+    end
+
     rot1 = downsample_rotation_map(rot_map1)
+    rot2 = downsample_rotation_map(rot_map2)
+
+    CSV.write(joinpath(out_folder, "perm_x.csv"), Tables.table(out_x), writeheader=false)
+    CSV.write(joinpath(out_folder, "perm_y.csv"), Tables.table(out_y), writeheader=false)
 
     CSV.write(joinpath(out_folder, "rot1.csv"), Tables.table(rot1), writeheader=false)
     CSV.write(joinpath(out_folder, "rot2.csv"), Tables.table(rot2), writeheader=false)
 
-    out_x, out_y
+    return sizes
 end
