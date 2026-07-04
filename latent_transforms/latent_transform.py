@@ -49,12 +49,15 @@ def generate_dataset(nr_samples):
         denoised180 = torch.rot90(encode(torch.rot90(decoded, 2, (3, 2))), -2, (3, 2))
         denoised270 = torch.rot90(encode(torch.rot90(decoded, 3, (3, 2))), -3, (3, 2))
 
+        print(denoised.shape)
         x = helpers.latent_img_to_in_samples(denoised)
+        print(x.shape)
         x90 = helpers.latent_img_to_in_samples(denoised90)
         x180 = helpers.latent_img_to_in_samples(denoised180)
         x270 = helpers.latent_img_to_in_samples(denoised270)
 
         y = denoised.permute(0, 2, 3, 1).reshape((-1, 16))
+        print(y.shape)
         y90 = denoised90.permute(0, 2, 3, 1).reshape((-1, 16))
         y180 = denoised180.permute(0, 2, 3, 1).reshape((-1, 16))
         y270 = denoised270.permute(0, 2, 3, 1).reshape((-1, 16))
@@ -68,7 +71,7 @@ def generate_dataset(nr_samples):
     
 
 
-def train(nr_samples, lr=2e-3, var_preservation=1.0, nr_epochs=2500):
+def train(nr_samples, lr=2e-3, nr_epochs=2500):
     X, Y90, Y180, Y270 = generate_dataset(nr_samples)
     BS, IN = X.shape
 
@@ -85,40 +88,61 @@ def train(nr_samples, lr=2e-3, var_preservation=1.0, nr_epochs=2500):
     TEST_BS, TEST_C, TEST_H, TEST_W = test_latents.shape
     helpers.latent_to_pil(test_latents).save(os.path.join(dir_path, "out/LT_identity.png"))
 
-    r = 1
-    for Y in [Y90, Y180, Y270]:
-        BS, OUT = Y.shape
+    torch.set_printoptions(linewidth=200, precision=4, sci_mode=False)
 
-        model = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
+    models = []
 
-        opt = torch.optim.AdamW(model.parameters() , lr=lr)
-        mse = torch.nn.MSELoss()
+    BS, OUT = Y90.shape
 
-        for i in range(nr_epochs):
-            opt.zero_grad()
+    model90  = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
+    model180 = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
+    model270 = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
 
-            wt = model.weight
-            cov = wt @ wt.t()
-            var_loss = mse(cov, torch.eye(16, device=wt.device, dtype=wt.dtype))
-            loss = mse(model(X), Y) + var_preservation * var_loss
-            loss.backward()
-            opt.step()
+    opt = torch.optim.AdamW(list(model90.parameters()) + list(model180.parameters()) + list(model270.parameters()), lr=lr)
+    mse = torch.nn.MSELoss()
 
-            if i % (nr_epochs // 20) == 0:
-                print(i, ", ", var_loss.item(), ", ", loss.item())
+    for i in range(nr_epochs):
+        opt.zero_grad()
+
+        wt = model90.weight
+        cov1 = wt @ wt.t()
+        wt = model180.weight
+        cov2 = wt @ wt.t()
+        wt = model270.weight
+        cov3 = wt @ wt.t()
+
+        r1 = model90.weight @ model270.weight
+        r2 = model180.weight @ model180.weight
+        r3 = model90.weight @ model180.weight @ model90.weight
+        r4 = model270.weight @ model180.weight @ model270.weight
+
+        id = torch.eye(16, device=wt.device, dtype=wt.dtype)
+
+        cov_loss = mse(cov1, id) + mse(cov2, id) + mse(cov3, id)
+        orth_loss = mse(r1, id) + mse(r2, id) + mse(r3, id) + mse(r4, id)
+
+        loss = mse(model90(X), Y90) + mse(model180(X), Y180) + mse(model270(X), Y270) + 1000*cov_loss + 1000*orth_loss
+        loss.backward()
+        opt.step()
+
+        if i % (nr_epochs // 20) == 0:
+            print(i, ", ", loss.item(), ", ", cov_loss.item(), ", ", orth_loss.item())
         
-        wt = model.weight
-        cov = wt @ wt.t()
-        print(cov)
+    
+    wt = model90.weight
+    cov = wt @ wt.t()
+    print(cov)
 
-        if r == 1:
-            test_linear = model(helpers.latent_img_to_in_samples(test_latents.float())).reshape(TEST_BS, TEST_H, TEST_W, TEST_C).permute((0, 3, 1, 2))
-            helpers.latent_to_pil(test_linear.to(torch.bfloat16)).save(os.path.join(dir_path, "out/LT_linear.png"))
-        
-        torch.save(model.state_dict(), os.path.join(dir_path, f"latent_transforms/rot{r*90}.pt"))
+    print(model90.weight @ model270.weight)
 
-        r += 1
+    test_linear = model90(helpers.latent_img_to_in_samples(test_latents.float())).reshape(TEST_BS, TEST_H, TEST_W, TEST_C).permute((0, 3, 1, 2))
+    helpers.latent_to_pil(test_linear.to(torch.bfloat16)).save(os.path.join(dir_path, "out/LT_linear.png"))
+    
+    torch.save(model90.state_dict(), os.path.join(dir_path, f"latent_transforms/rot90.pt"))
+    torch.save(model180.state_dict(), os.path.join(dir_path, f"latent_transforms/rot180.pt"))
+    torch.save(model270.state_dict(), os.path.join(dir_path, f"latent_transforms/rot270.pt"))
 
 
 
-train(150000, var_preservation=100, nr_epochs=5000)
+
+train(100000, nr_epochs=25000)
