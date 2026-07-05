@@ -56,6 +56,15 @@ function Base.:(==)(p1::Piece, p2::Piece)
     return false
 end
 
+function find_piece_in_array(p, array)
+    for (i, a) in enumerate(array)
+        if to_tuple(a) == to_tuple(p)
+            return i
+        end
+    end
+    return nothing
+end
+
 function rand_perm!(array)
     n = length(array)
     array .= 1:n
@@ -431,71 +440,99 @@ let pairs::Vector{NTuple{6,Int16}} = []
 
 end
 
-# put a piece to next_r,next_c and recursively search for all solutions
-function all_solutions!(solution, pieces, next_r, next_c, solutions; start_time=time(), max_time=5, max_nr_solutions=100)
-    if time() - start_time > max_time || length(solutions) >= max_nr_solutions
-        return false
+function my_insert!(array, index, item)
+    push!(array, item)
+    for i=length(array):-1:(index+1)
+        array[i] = array[i-1]
     end
+    array[index] = item
+end
 
-    timeout = false
+# put a piece to next_r,next_c and recursively search for all solutions
+function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_time=time(), max_time=5, max_nr_solutions=100)
+    if time() - start_time > max_time || length(solutions) >= max_nr_solutions
+        return true # abort for time reasons or because max_nr_solutions were already found
+    end
 
     h, w = size(solution)
 
-    required_top = nothing
-    required_bottom = nothing
-    required_right = nothing
-    required_left = nothing
-
     required_left = next_c == 1 ? Edge() : invert(solution[next_r, next_c-1].right)
     required_top = next_r == 1 ? Edge() : invert(solution[next_r-1, next_c].bottom)
-    if next_c == w
-        required_right = Edge()
-    end
-    if next_r == h
-        required_bottom = Edge()
+    required_right = next_c == w ? Edge() : nothing
+    required_bottom = next_r == h ? Edge() : nothing
+
+    key = (required_left.id, required_top.id)
+    if !haskey(piece_map, key)
+        return false
     end
 
-    for i in eachindex(pieces)
+    pieces = piece_map[key]
+    n = length(pieces)
+
+    for i in 1:n
         p = pieces[i]
-        for r = allrotations(p)
-            if r.left == required_left &&
-               r.top == required_top &&
-               (isnothing(required_right) || r.right == required_right) &&
-               (isnothing(required_bottom) || r.bottom == required_bottom)
 
-                solution[next_r, next_c] = r
+        if p.left == required_left &&
+           p.top == required_top &&
+           (isnothing(required_right) || p.right == required_right) &&
+           (isnothing(required_bottom) || p.bottom == required_bottom)
 
-                if (next_r, next_c) == (h, w)
-                    push!(solutions, copy(solution))
-                    continue
-                end
+            solution[next_r, next_c] = p
 
-                begin
-                    popat!(pieces, i)
+            if (next_r, next_c) == (h, w)
+                push!(solutions, copy(solution))
+                return false
+            end
 
-                    nc = next_c % w + 1
-                    nr = nc == 1 ? next_r + 1 : next_r
-                    success = all_solutions!(solution, pieces, nr, nc, solutions, start_time=start_time, max_time=max_time)
-                    if !success
-                        timeout = true
-                    end
+            begin
+                r1, r2, r3, r4 = allrotations(p)
+                P1 = piece_map[r1.left.id, r1.top.id]
+                P2 = piece_map[r2.left.id, r2.top.id]
+                P3 = piece_map[r3.left.id, r3.top.id]
+                P4 = piece_map[r4.left.id, r4.top.id]
+                i1 = find_piece_in_array(r1, P1)
+                popat!(P1, i1, nothing)
+                i2 = find_piece_in_array(r2, P2)
+                popat!(P2, i2, nothing)
+                i3 = find_piece_in_array(r3, P3)
+                popat!(P3, i3, nothing)
+                i4 = find_piece_in_array(r4, P4)
+                popat!(P4, i4, nothing)
 
-                    insert!(pieces, i, p)
+                nc = next_c % w + 1
+                nr = nc == 1 ? next_r + 1 : next_r
+                timeout = all_solutions!(solution, piece_map, nr, nc, solutions, start_time=start_time, max_time=max_time)
+
+                isnothing(i4) || my_insert!(P4, i4, r4)
+                isnothing(i3) || my_insert!(P3, i3, r3)
+                isnothing(i2) || my_insert!(P2, i2, r2)
+                isnothing(i1) || my_insert!(P1, i1, r1)
+
+                if timeout
+                    return true
                 end
 
             end
+
         end
     end
 
-    success = !timeout
-    return success
+    return false
 
 end
 
 function get_all_solutions(puzzle, max_time=5)
     sols = []
-    success = all_solutions!(copy(puzzle), vec(puzzle[2:end]), 1, 2, sols, max_time=max_time)
-    return success, sols
+    piece_map = Dict{Tuple{Int,Int},Vector{Piece}}()
+    for p in puzzle[2:end]
+        for rp = allrotations(p)
+            crt = get!(piece_map, (rp.left.id, rp.top.id), Piece[])
+            push!(crt, rp)
+        end
+    end
+    print("solving... ")
+    timeout = @time all_solutions!(copy(puzzle), piece_map, 1, 2, sols, max_time=max_time)
+    return timeout, sols
 end
 
 let count::Vector{Int} = zeros(64)
@@ -668,8 +705,8 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
     end
 
     if check
-        success, solutions = get_all_solutions(best1, max_time_for_solve)
-        if success
+        timeout, solutions = get_all_solutions(best1, max_time_for_solve)
+        if !timeout && length(solutions) == 2
             println("SUCCESS: puzzle has exactly 2 solutions! :D")
         else
             println("FAIL: could not verify that the puzzle has only 2 solutions🤷")
