@@ -9,19 +9,19 @@ def estimate_clean(latents, s, noise_preds, LT_data):
         permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
 
         # the raw clean image predictions (with artifacts)
-        raw_target_latents = latents - s * noise_preds
+        target_latents = latents - s * noise_preds
 
-        raw_target = helpers.decode(raw_target_latents)
-        raw_permuted_target = torch.cat([
-            raw_target[1:2, :, invpermutey, invpermutex],
-            raw_target[0:1, :, permutey, permutex]
+        target = helpers.decode(target_latents)
+        permuted_target = torch.cat([
+            target[1:2, :, invpermutey, invpermutex],
+            target[0:1, :, permutey, permutex]
         ])
 
         # averaging in pixel space!
-        common_target = helpers.encode2(0.5 * (raw_target + raw_permuted_target))
+        common_target_latents = helpers.encode2(0.5 * (target + permuted_target))
         
         if s > 0.2:
-            residuals = raw_target_latents - helpers.encode2(raw_target)
+            residuals = target_latents - helpers.encode2(target)
 
             res1 = 0.5 * (residuals[0:1] + helpers.latent_inv_transform(residuals[1:2], LT_data))
             res2 = 0.5 * (residuals[1:2] + helpers.latent_transform(residuals[0:1], LT_data))
@@ -29,9 +29,9 @@ def estimate_clean(latents, s, noise_preds, LT_data):
             # equation 8
             res = torch.cat([res1, res2])
 
-            common_target = common_target + res
+            common_target_latents = common_target_latents + res
 
-        return common_target
+        return common_target_latents
 
 
 def optimize(
@@ -45,8 +45,6 @@ def optimize(
 ):
     
     permutey, permutex, invpermutey, invpermutex, _,_,_,_,_ = LT_data
-
-    latents[1:2, :, :, :] = helpers.latent_transform(latents[0:1, :, :, :], LT_data)
 
     i = 0
     # 7. Denoising loop
