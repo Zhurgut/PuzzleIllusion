@@ -72,65 +72,62 @@ function rand_perm!(array)
         j = rand(1:n)
         array[i], array[j] = array[j], array[i]
     end
-    return array
+    nothing
 end
 
 
 # to get permutation of the edge pieces
-let perm::Vector{Int} = collect(1:10)
+function edge_perm!(perm::Vector{Int}, w, h)
+    nr_edges = 2w + 2h - 4
+    corners = (1, w, w + h - 1, 2w + h - 2)
+    resize!(perm, nr_edges)
+    rand_perm!(perm)
+    p = perm
 
-    global function edge_perm(w, h)
-        nr_edges = 2w + 2h - 4
-        corners = (1, w, w + h - 1, 2w + h - 2)
-        resize!(perm, nr_edges)
-        p = rand_perm!(perm)
+    # set the corners in corner positions
+    c = if rand() < 0.5
+        (corners[3], corners[1], corners[4], corners[2])
+    else
+        (corners[3], corners[4], corners[2], corners[1])
+    end
 
-        # set the corners in corner positions
-        c = if rand() < 0.5
-            (corners[3], corners[1], corners[4], corners[2])
-        else
-            (corners[3], corners[4], corners[2], corners[1])
+    for (i, ci) in enumerate(c)
+        idx = findfirst(==(ci), p)
+        p[corners[i]], p[idx] = p[idx], p[corners[i]]
+    end
+
+    prev(i, nr_edges) = mod(i - 2, nr_edges) + 1
+    next(i, nr_edges) = mod(i, nr_edges) + 1
+    value_fits_at_position(v, i, p, N) = prev(v, N) != p[prev(i, N)] && next(v, N) != p[next(i, N)]
+
+    # make sure edges all have different connections
+    for i = 1:nr_edges
+        if i ∈ corners
+            continue
         end
 
-        for (i, ci) in enumerate(c)
-            idx = findfirst(==(ci), p)
-            p[corners[i]], p[idx] = p[idx], p[corners[i]]
-        end
+        if !value_fits_at_position(p[i], i, p, nr_edges)
+            # value at p[i] needs to go somewhere else
+            success = false
 
-        prev(i, nr_edges) = mod(i - 2, nr_edges) + 1
-        next(i, nr_edges) = mod(i, nr_edges) + 1
-        value_fits_at_position(v, i, p, N) = prev(v, N) != p[prev(i, N)] && next(v, N) != p[next(i, N)]
-
-        # make sure edges all have different connections
-        for i = 1:nr_edges
-            if i ∈ corners
-                continue
-            end
-
-            if !value_fits_at_position(p[i], i, p, nr_edges)
-                # value at p[i] needs to go somewhere else
-                success = false
-
-                for j = 1:nr_edges
-                    k = mod(i + j - 1, nr_edges) + 1
-                    if k ∈ corners
-                        continue
-                    end
-
-                    if value_fits_at_position(p[i], k, p, nr_edges) && value_fits_at_position(p[k], i, p, nr_edges)
-                        p[i], p[k] = p[k], p[i]
-                        success = true
-                        break
-                    end
+            for j = 1:nr_edges
+                k = mod(i + j - 1, nr_edges) + 1
+                if k ∈ corners
+                    continue
                 end
 
-                @assert success
+                if value_fits_at_position(p[i], k, p, nr_edges) && value_fits_at_position(p[k], i, p, nr_edges)
+                    p[i], p[k] = p[k], p[i]
+                    success = true
+                    break
+                end
             end
+
+            @assert success
         end
-
-        return p
-
     end
+
+    return p
 
 end
 
@@ -190,175 +187,166 @@ function piece_fits_nowhere(p, r, c, puzzle)
 end
 
 # put solution 1 into sol1, and permuted solution 2 into out
-let filling_perm::Vector{Int} = zeros(Int, 10)
+function random_puzzle!(filling_perm::Vector{Int}, edges_perm, sol1, out)
+    sol1 = default_puzzle!(sol1)
+    fill!(out, Piece(0, 0, 0, 0))
+    h, w = size(sol1)
 
-    global function random_puzzle!(sol1, out)
-        sol1 = default_puzzle!(sol1)
-        fill!(out, Piece(0, 0, 0, 0))
-        h, w = size(sol1)
+    # edge pieces
+    edge_perm!(edges_perm, w, h)
 
-        # edge pieces
-        edges_perm = edge_perm(w, h)
+    for (i, e) in enumerate(edges_perm)
+        in_r, in_c, in_rot = from_edge_to_cartesian(i, w, h)
+        out_r, out_c, out_rot = from_edge_to_cartesian(e, w, h)
 
-        for (i, e) in enumerate(edges_perm)
-            in_r, in_c, in_rot = from_edge_to_cartesian(i, w, h)
-            out_r, out_c, out_rot = from_edge_to_cartesian(e, w, h)
-
-            out[out_r, out_c] = rotate(sol1[in_r, in_c], out_rot - in_rot)
-        end
-
-        # filling pieces
-        resize!(filling_perm, (w - 2) * (h - 2))
-        rand_perm!(filling_perm)
-        for (i, e) in enumerate(filling_perm)
-            in_r, in_c = (i - 1) ÷ (w - 2) + 1, (i - 1) % (w - 2) + 1
-            piece = sol1[in_r+1, in_c+1]
-            out_r, out_c = (e - 1) ÷ (w - 2) + 1, (e - 1) % (w - 2) + 1
-
-            success = false
-            init_r = rand(1:4)
-            for r = 0:3
-                rotated = rotate(piece, init_r + r)
-                if piece_fits_nowhere(rotated, out_r + 1, out_c + 1, out)
-                    out[out_r+1, out_c+1] = rotated
-                    success = true
-                    break
-                end
-            end
-            if !success
-                println("fail")
-                return random_puzzle(w, h)
-            end
-        end
-
-        @assert out[end, end] == sol1[1, 1]
-
-        nothing
+        out[out_r, out_c] = rotate(sol1[in_r, in_c], out_rot - in_rot)
     end
-end
 
+    # filling pieces
+    resize!(filling_perm, (w - 2) * (h - 2))
+    rand_perm!(filling_perm)
+    for (i, e) in enumerate(filling_perm)
+        in_r, in_c = (i - 1) ÷ (w - 2) + 1, (i - 1) % (w - 2) + 1
+        piece = sol1[in_r+1, in_c+1]
+        out_r, out_c = (e - 1) ÷ (w - 2) + 1, (e - 1) % (w - 2) + 1
 
-let map::Vector{Int} = zeros(Int, 1024)
-
-    global function get_mapping!(graph)
-        n = (size(graph, 1) - 1) ÷ 2
-        resize!(map, 2n + 1)
-        fill!(map, 0)
-
-        for connection_id = 1:n
-            if !any(graph)
+        success = false
+        init_r = rand(1:4)
+        for r = 0:3
+            rotated = rotate(piece, init_r + r)
+            if piece_fits_nowhere(rotated, out_r + 1, out_c + 1, out)
+                out[out_r+1, out_c+1] = rotated
+                success = true
                 break
             end
-
-            crt_id = rand([-1, 1]) * connection_id
-
-            start = findfirst(graph) |> Tuple
-            map[start[1]] = crt_id
-            map[start[2]] = -crt_id
-
-            graph[start[1], start[2]] = graph[start[2], start[1]] = false
-            next_row = findfirst(@view graph[:, start[2]])
-            if isnothing(next_row)
-                continue
-            end
-
-            crt = next_row, start[2]
-            while next_row != start[1]
-                graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
-                next_col = findfirst(@view graph[crt[1], :])
-
-                crt = crt[1], next_col
-                map[crt[1]] = crt_id
-                map[crt[2]] = -crt_id
-
-                graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
-                next_row = findfirst(@view graph[:, crt[2]])
-                crt = next_row, crt[2]
-            end
-
-            graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
         end
-
-        map
+        if !success
+            println("fail")
+            return random_puzzle(w, h)
+        end
     end
+
+    @assert out[end, end] == sol1[1, 1]
+
+    nothing
 end
 
-# given two puzzle solutions, solve constraints to figure out what connectors go where
-let graph::Matrix{Bool} = zeros(Bool, 1024, 1024)
 
-    global function resolve_connections!(def_sol, sol2)
-        n = def_sol[end, end].left.id |> Int |> abs
-        if size(graph) != (2n + 1, 2n + 1)
-            graph = zeros(Bool, 2n + 1, 2n + 1)
-        else
-            fill!(graph, false)
-        end
-        h, w = size(def_sol)
+function get_mapping!(map::Vector{Int}, graph)
+    n = (size(graph, 1) - 1) ÷ 2
+    resize!(map, 2n + 1)
+    fill!(map, 0)
 
-        for c = 1:w, r = 1:h
-            d = def_sol[r, c]
-            s = sol2[r, c]
-            if r < h
-                d2 = def_sol[r+1, c]
-                i1, i2 = d.bottom.id, d2.top.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-
-                s2 = sol2[r+1, c]
-                i1, i2 = s.bottom.id, s2.top.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-            end
-            if r > 1
-                d2 = def_sol[r-1, c]
-                i1, i2 = d.top.id, d2.bottom.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-
-                s2 = sol2[r-1, c]
-                i1, i2 = s.top.id, s2.bottom.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-            end
-            if c < w
-                d2 = def_sol[r, c+1]
-                i1, i2 = d.right.id, d2.left.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-
-                s2 = sol2[r, c+1]
-                i1, i2 = s.right.id, s2.left.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-            end
-            if c > 1
-                d2 = def_sol[r, c-1]
-                i1, i2 = d.left.id, d2.right.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-
-                s2 = sol2[r, c-1]
-                i1, i2 = s.left.id, s2.right.id
-                graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
-            end
+    for connection_id = 1:n
+        if !any(graph)
+            break
         end
 
-        mapping = get_mapping!(graph)
+        crt_id = rand([-1, 1]) * connection_id
 
-        for c = 1:w, r = 1:h
-            p = def_sol[r, c]
-            def_sol[r, c] = Piece(
-                Connection(mapping[p.top.id+n+1]),
-                Connection(mapping[p.right.id+n+1]),
-                Connection(mapping[p.bottom.id+n+1]),
-                Connection(mapping[p.left.id+n+1]),
-            )
+        start = findfirst(graph) |> Tuple
+        map[start[1]] = crt_id
+        map[start[2]] = -crt_id
 
-            p = sol2[r, c]
-            sol2[r, c] = Piece(
-                Connection(mapping[p.top.id+n+1]),
-                Connection(mapping[p.right.id+n+1]),
-                Connection(mapping[p.bottom.id+n+1]),
-                Connection(mapping[p.left.id+n+1]),
-            )
+        graph[start[1], start[2]] = graph[start[2], start[1]] = false
+        next_row = findfirst(@view graph[:, start[2]])
+        if isnothing(next_row)
+            continue
         end
 
-        def_sol, sol2
+        crt = next_row, start[2]
+        while next_row != start[1]
+            graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
+            next_col = findfirst(@view graph[crt[1], :])
+
+            crt = crt[1], next_col
+            map[crt[1]] = crt_id
+            map[crt[2]] = -crt_id
+
+            graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
+            next_row = findfirst(@view graph[:, crt[2]])
+            crt = next_row, crt[2]
+        end
+
+        graph[crt[1], crt[2]] = graph[crt[2], crt[1]] = false
     end
 
+    nothing
+end
+
+
+# given two puzzle solutions, solve constraints to figure out what connectors go where
+function resolve_connections!(graph::Matrix{Bool}, mapping, def_sol, sol2)
+    n = def_sol[end, end].left.id |> Int |> abs
+    if size(graph) != (2n + 1, 2n + 1)
+        graph = zeros(Bool, 2n + 1, 2n + 1)
+    else
+        fill!(graph, false)
+    end
+    h, w = size(def_sol)
+
+    for c = 1:w, r = 1:h
+        d = def_sol[r, c]
+        s = sol2[r, c]
+        if r < h
+            d2 = def_sol[r+1, c]
+            i1, i2 = d.bottom.id, d2.top.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+
+            s2 = sol2[r+1, c]
+            i1, i2 = s.bottom.id, s2.top.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+        end
+        if r > 1
+            d2 = def_sol[r-1, c]
+            i1, i2 = d.top.id, d2.bottom.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+
+            s2 = sol2[r-1, c]
+            i1, i2 = s.top.id, s2.bottom.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+        end
+        if c < w
+            d2 = def_sol[r, c+1]
+            i1, i2 = d.right.id, d2.left.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+
+            s2 = sol2[r, c+1]
+            i1, i2 = s.right.id, s2.left.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+        end
+        if c > 1
+            d2 = def_sol[r, c-1]
+            i1, i2 = d.left.id, d2.right.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+
+            s2 = sol2[r, c-1]
+            i1, i2 = s.left.id, s2.right.id
+            graph[i1+n+1, i2+n+1] = graph[i2+n+1, i1+n+1] = true
+        end
+    end
+
+    get_mapping!(mapping, graph)
+
+    for c = 1:w, r = 1:h
+        p = def_sol[r, c]
+        def_sol[r, c] = Piece(
+            Connection(mapping[p.top.id+n+1]),
+            Connection(mapping[p.right.id+n+1]),
+            Connection(mapping[p.bottom.id+n+1]),
+            Connection(mapping[p.left.id+n+1]),
+        )
+
+        p = sol2[r, c]
+        sol2[r, c] = Piece(
+            Connection(mapping[p.top.id+n+1]),
+            Connection(mapping[p.right.id+n+1]),
+            Connection(mapping[p.bottom.id+n+1]),
+            Connection(mapping[p.left.id+n+1]),
+        )
+    end
+
+    nothing
 end
 
 function pieces_are_unique(puzzle)
@@ -382,13 +370,13 @@ function rot_symmetric_pieces_exist(puzzle)
     return false
 end
 
-let pairs::Vector{NTuple{6,Int16}} = []
+let
 
     function tuple(p1, p2)
         Int16.((p1.left.id, p1.top.id, p2.top.id, p2.right.id, p2.bottom.id, p1.bottom.id))
     end
 
-    global function same_pair_exists(puzzle)
+    global function same_pair_exists!(pairs::Vector{NTuple{6,Int16}}, puzzle)
         h, w = size(puzzle)
         empty!(pairs)
         for c = 1:(w-1), r = 1:h
@@ -470,11 +458,15 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
     n = length(pieces)
 
     for i in 1:n
+
+        if (next_r, next_c) == (1, 2)
+            it_start = time()
+            print("  $i/$n ")
+        end
+
         p = pieces[i]
 
-        if p.left == required_left &&
-           p.top == required_top &&
-           (isnothing(required_right) || p.right == required_right) &&
+        if (isnothing(required_right) || p.right == required_right) &&
            (isnothing(required_bottom) || p.bottom == required_bottom)
 
             solution[next_r, next_c] = p
@@ -515,6 +507,12 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
             end
 
         end
+
+        if (next_r, next_c) == (1, 2)
+            it_end = time()
+            println(" $(round(it_end - it_start, digits=3))s")
+        end
+
     end
 
     return false
@@ -530,7 +528,7 @@ function get_all_solutions(puzzle, max_time=5)
             push!(crt, rp)
         end
     end
-    print("solving... ")
+    println("solving... ")
     timeout = @time all_solutions!(copy(puzzle), piece_map, 1, 2, sols, max_time=max_time)
     return timeout, sols
 end
@@ -652,64 +650,98 @@ end
 # the saved permutation matrices, will have size (w*out_scale*64, h*out_scale*64)
 # these sizes need to be a multiple of 64
 # calculated automatically to be as big as reasonably possible for SD3.5 medium if out_scale=nothing
-function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_for_solve=30, save=true, check=true)
+function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_for_solve=30, save=true, check=true, nr_threads=Threads.nthreads())
+    nr_threads = clamp(1, Threads.nthreads())
+    println("using $nr_threads threads")
 
-    sol1 = Matrix{Piece}(undef, h, w)
-    sol2 = Matrix{Piece}(undef, h, w)
-    random_puzzle!(sol1, sol2)
-    resolve_connections!(sol1, sol2)
+    puzzles = [Matrix{Piece}(undef, h, w) for i in 1:(2*nr_threads)]
+    edge_perms = [Vector{Int}(undef, 40) for i in 1:nr_threads]
+    filling_perms = [Vector{Int}(undef, 100) for i in 1:nr_threads]
+    graphs = [Matrix{Bool}(undef, 1024, 1024) for i in 1:nr_threads]
+    mappings = [Vector{Int}(undef, 30) for i in 1:nr_threads]
+    pairs = [Vector{NTuple{6,Int16}}(undef, 100) for i in 1:nr_threads]
 
-    best1, best2, best_entropy = (sol1, sol2, 0)
+    sol1, sol2 = puzzles[1:2]
+    random_puzzle!(filling_perms[1], edge_perms[1], sol1, sol2)
+    resolve_connections!(graphs[1], mappings[1], sol1, sol2)
+
+    best1, best2, best_entropy = (nothing, nothing, 0)
 
     start_time = time()
-    for t = 1:nr_trials
+    total_time = 0
 
-        if time() - start_time > 60
-            start_time = time()
-            println("$t / $nr_trials")
+    mutex = ReentrantLock()
+
+    done = zeros(Int, nr_threads)
+
+    Threads.@threads for t_id in 1:nr_threads
+
+        for t = 1:(nr_trials÷nr_threads)
+
+            if t_id == 1
+                now = time()
+                if now - start_time > 30
+                    total_time += now - start_time
+                    start_time = now
+                    println("$(round(100 * sum(done) / nr_trials, digits=1))%")
+                end
+            end
+
+            if t % 1000 == 0
+                done[t_id] = t
+            end
+
+            random_puzzle!(filling_perms[t_id], edge_perms[t_id], puzzles[2t_id-1], puzzles[2t_id]) # random puzzle with at least two solutions
+            resolve_connections!(graphs[t_id], mappings[t_id], puzzles[2t_id-1], puzzles[2t_id]) # use as many different connectors as possible
+
+            # some necessary conditions for having exactly 2 solutions:
+            if !pieces_are_unique(puzzles[2t_id-1])
+                continue
+            end # no duplicate pieces
+            if rot_symmetric_pieces_exist(puzzles[2t_id-1])
+                continue
+            end # no piece is rotationally symmetric
+
+            if same_pair_exists!(pairs[t_id], puzzles[2t_id-1])
+                continue
+            end # all pairs of pieces must not be rotationally symmetric
+            if same_pair_exists!(pairs[t_id], puzzles[2t_id])
+                continue
+            end # and no two pairs of pieces must be the same
+
+            lock(mutex) # on 10x10, 6 locks per 1_000_000 trials
+
+            # otherwise we have a candidate which likely only has 2 solutions
+            # increase likelyhood by choosing the solution which maximizes "puzzle entropy"
+            entropy = piece_entropy(puzzles[2t_id-1])
+
+            if entropy > best_entropy
+                best1 = copy(puzzles[2t_id-1])
+                best2 = copy(puzzles[2t_id])
+                best_entropy = entropy
+
+                stats = nr_connections(puzzles[2t_id-1])
+                nr_cs, most_prominent = length(stats), stats[end] ÷ 2
+                nr_inner_cs = nr_connections_inside(puzzles[2t_id-1])
+
+                println("[t$t_id] $(round(entropy, digits=6)); total: $(nr_cs), inner: $(nr_inner_cs), most: $(most_prominent)")
+            end
+
+            unlock(mutex)
+
         end
-
-        random_puzzle!(sol1, sol2) # random puzzle with at least two solutions
-        resolve_connections!(sol1, sol2) # use as many different connectors as possible
-
-        # some necessary conditions for having exactly 2 solutions:
-        if !pieces_are_unique(sol1)
-            continue
-        end # no duplicate pieces
-        if rot_symmetric_pieces_exist(sol1)
-            continue
-        end # no piece is rotationally symmetric
-        if same_pair_exists(sol1)
-            continue
-        end # all pairs of pieces must not be rotationally symmetric
-        if same_pair_exists(sol2)
-            continue
-        end # and no two pairs of pieces must be the same
-
-        # otherwise we have a candidate which likely only has 2 solutions
-        # increase likelyhood by choosing the solution which maximizes "puzzle entropy"
-        entropy = piece_entropy(sol1)
-
-        if entropy > best_entropy
-            best1 = copy(sol1)
-            best2 = copy(sol2)
-            best_entropy = entropy
-
-            stats = nr_connections(sol1)
-            nr_cs, most_prominent = length(stats), stats[end] ÷ 2
-            nr_inner_cs = nr_connections_inside(sol1)
-
-            println("$(round(entropy, digits=13)); total: $(nr_cs), inner: $(nr_inner_cs), most: $(most_prominent)")
-        end
-
     end
+
+    total_time += time() - start_time
+
+    println("[- $(round(Int, nr_trials / total_time)) trials per second -]")
 
     if check
         timeout, solutions = get_all_solutions(best1, max_time_for_solve)
         if !timeout && length(solutions) == 2
-            println("SUCCESS: puzzle has exactly 2 solutions! :D")
+            println("🟢 SUCCESS: puzzle has exactly 2 solutions! :D")
         else
-            println("FAIL: could not verify that the puzzle has only 2 solutions🤷")
+            println("🟥 FAIL: could not verify that the puzzle has only 2 solutions🤷")
             println("$(length(solutions)) solutions were found in the given time.")
             println("pieces are unique: ", pieces_are_unique(best1))
             println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
