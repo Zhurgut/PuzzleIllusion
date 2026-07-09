@@ -436,8 +436,12 @@ function my_insert!(array, index, item)
     array[index] = item
 end
 
+global pas_lock::ReentrantLock = ReentrantLock()
+global pas_total::Int = 0
+global pas_done::Int = 0
+
 # put a piece to next_r,next_c and recursively search for all solutions
-function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_time=time(), max_time=5, max_nr_solutions=100)
+function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_time=time(), max_time=5, max_nr_solutions=100, print_progress=false)
     if time() - start_time > max_time || length(solutions) >= max_nr_solutions
         return true # abort for time reasons or because max_nr_solutions were already found
     end
@@ -457,11 +461,20 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
     pieces = piece_map[key]
     n = length(pieces)
 
+    if print_progress
+        global pas_lock, pas_total
+        lock(pas_lock)
+        pas_total += n
+        unlock(pas_lock)
+    end
+
+    nc = next_c % w + 1
+    nr = nc == 1 ? next_r + 1 : next_r
+
     for i in 1:n
 
-        if (next_r, next_c) == (1, 2)
+        if print_progress
             it_start = time()
-            print("  $i/$n ")
         end
 
         p = pieces[i]
@@ -491,9 +504,7 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
                 i4 = find_piece_in_array(r4, P4)
                 popat!(P4, i4, nothing)
 
-                nc = next_c % w + 1
-                nr = nc == 1 ? next_r + 1 : next_r
-                timeout = all_solutions!(solution, piece_map, nr, nc, solutions, start_time=start_time, max_time=max_time)
+                timeout = all_solutions!(solution, piece_map, nr, nc, solutions, start_time=start_time, max_time=max_time, max_nr_solutions=max_nr_solutions)
 
                 isnothing(i4) || my_insert!(P4, i4, r4)
                 isnothing(i3) || my_insert!(P3, i3, r3)
@@ -508,9 +519,13 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
 
         end
 
-        if (next_r, next_c) == (1, 2)
+        if print_progress
+            global pas_lock, pas_total, pas_done
             it_end = time()
-            println(" $(round(it_end - it_start, digits=3))s")
+            lock(pas_lock)
+            pas_done += 1
+            println("$pas_done/$pas_total $(round(it_end - it_start, digits=3))s")
+            unlock(pas_lock)
         end
 
     end
@@ -519,7 +534,95 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
 
 end
 
-function get_all_solutions(puzzle, max_time=5)
+
+function parallel_all_solutions!(solution, piece_map, next_r, next_c, all_solved, crt_depth, par_depth; start_time=time(), max_time=5, max_nr_solutions=100)
+    if time() - start_time > max_time || length(all_solved) >= max_nr_solutions
+        return true # abort for time reasons or because max_nr_solutions were already found
+    end
+
+    h, w = size(solution)
+
+    @assert (h, w) != (next_r, next_c)
+
+    required_left = next_c == 1 ? Edge() : invert(solution[next_r, next_c-1].right)
+    required_top = next_r == 1 ? Edge() : invert(solution[next_r-1, next_c].bottom)
+    required_right = next_c == w ? Edge() : nothing
+    required_bottom = next_r == h ? Edge() : nothing
+
+    key = (required_left.id, required_top.id)
+    if !haskey(piece_map, key)
+        return false
+    end
+
+    pieces = piece_map[key]
+    nr_threads = length(pieces)
+
+    solutions = [copy(solution) for i = 1:nr_threads]
+    piece_maps = [deepcopy(piece_map) for i = 1:nr_threads]
+
+    nc = next_c % w + 1
+    nr = nc == 1 ? next_r + 1 : next_r
+
+    mutex = ReentrantLock()
+
+    println(repeat("  ", crt_depth - 1), "- $nr_threads tasks, $(min(nr_threads, Threads.nthreads())) threads")
+
+    timeout = false
+
+    Threads.@threads for t_id in 1:nr_threads
+
+        if (isnothing(required_right) || p.right == required_right) &&
+           (isnothing(required_bottom) || p.bottom == required_bottom)
+
+            solutions[t_id][next_r, next_c] = pieces[t_id]
+
+            let
+                p = pieces[t_id]
+
+                r1, r2, r3, r4 = allrotations(p)
+                P1 = piece_maps[t_id][r1.left.id, r1.top.id]
+                P2 = piece_maps[t_id][r2.left.id, r2.top.id]
+                P3 = piece_maps[t_id][r3.left.id, r3.top.id]
+                P4 = piece_maps[t_id][r4.left.id, r4.top.id]
+                i1 = find_piece_in_array(r1, P1)
+                popat!(P1, i1, nothing)
+                i2 = find_piece_in_array(r2, P2)
+                popat!(P2, i2, nothing)
+                i3 = find_piece_in_array(r3, P3)
+                popat!(P3, i3, nothing)
+                i4 = find_piece_in_array(r4, P4)
+                popat!(P4, i4, nothing)
+
+                solved = Matrix{Piece}[]
+                if crt_depth < par_depth
+                    t_timeout = parallel_all_solutions!(solutions[t_id], piece_maps[t_id], nr, nc, solved, crt_depth+1, par_depth, start_time=start_time, max_time=max_time, max_nr_solutions=max_nr_solutions-length(all_solved))
+                else
+                    t_timeout = all_solutions!(solutions[t_id], piece_maps[t_id], nr, nc, solved, print_progress=true, start_time=start_time, max_time=max_time, max_nr_solutions=max_nr_solutions-length(all_solved))
+                end
+
+                isnothing(i4) || my_insert!(P4, i4, r4)
+                isnothing(i3) || my_insert!(P3, i3, r3)
+                isnothing(i2) || my_insert!(P2, i2, r2)
+                isnothing(i1) || my_insert!(P1, i1, r1)
+
+                if t_timeout || length(solved) > 0
+                    lock(mutex)
+                    append!(all_solved, solved)
+                    timeout = timeout || t_timeout
+                    unlock(mutex)
+                end
+
+            end
+
+        end
+
+    end
+
+    return timeout
+
+end
+
+function get_all_solutions(puzzle, max_time=5, parallel_depth=2)
     sols = []
     piece_map = Dict{Tuple{Int,Int},Vector{Piece}}()
     for p in puzzle[2:end]
@@ -528,9 +631,28 @@ function get_all_solutions(puzzle, max_time=5)
             push!(crt, rp)
         end
     end
+
+    global pas_total, pas_done
+    pas_total = 0
+    pas_done = 0
+
     println("solving... ")
-    timeout = @time all_solutions!(copy(puzzle), piece_map, 1, 2, sols, max_time=max_time)
-    return timeout, sols
+    timeout = @time parallel_all_solutions!(copy(puzzle), piece_map, 1, 2, sols, 1, parallel_depth, max_time=max_time)
+
+    if !timeout && length(sols) == 2
+        println("🟢 SUCCESS: puzzle has exactly 2 solutions! :D")
+    else
+        println("🟥 FAIL: could not verify that the puzzle has only 2 solutions🤷")
+        if timeout
+            println("Out of time, $(length(sols)) solutions were found.")
+        else
+            println("$(length(sols)) solutions were found.")
+            println("pieces are unique: ", pieces_are_unique(puzzle))
+            println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(puzzle))
+        end
+    end
+
+    return sols
 end
 
 let count::Vector{Int} = zeros(64)
@@ -651,7 +773,7 @@ end
 # these sizes need to be a multiple of 64
 # calculated automatically to be as big as reasonably possible for SD3.5 medium if out_scale=nothing
 function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_for_solve=30, save=true, check=true, nr_threads=Threads.nthreads())
-    nr_threads = clamp(1, Threads.nthreads())
+    nr_threads = clamp(nr_threads, 1, Threads.nthreads())
     println("using $nr_threads threads")
 
     puzzles = [Matrix{Piece}(undef, h, w) for i in 1:(2*nr_threads)]
@@ -737,15 +859,7 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
     println("[- $(round(Int, nr_trials / total_time)) trials per second -]")
 
     if check
-        timeout, solutions = get_all_solutions(best1, max_time_for_solve)
-        if !timeout && length(solutions) == 2
-            println("🟢 SUCCESS: puzzle has exactly 2 solutions! :D")
-        else
-            println("🟥 FAIL: could not verify that the puzzle has only 2 solutions🤷")
-            println("$(length(solutions)) solutions were found in the given time.")
-            println("pieces are unique: ", pieces_are_unique(best1))
-            println("some pieces are rotationally symmetric: ", rot_symmetric_pieces_exist(best1))
-        end
+        solutions = get_all_solutions(best1, max_time_for_solve)
     end
 
     if save
