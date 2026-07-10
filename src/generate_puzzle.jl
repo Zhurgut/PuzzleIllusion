@@ -703,28 +703,6 @@ end
 
 include("draw_puzzle.jl")
 
-function save_puzzle(sol1, sol2; has_border=true, F=nothing, target_border=0.5, target_size=1024*1024)
-    H, W = size(sol1)
-    nr_connectors = length(nr_connections(sol1))
-    connectors = random_connectors(nr_connectors)
-
-    out_folder = joinpath(@__DIR__, "..", "puzzles", "$(W)x$(H)")
-    mkpath(out_folder)
-
-
-    sizes = save_permutation_with_round_knobs(sol1, sol2, connectors, out_folder, has_border, F, target_border, target_size)
-
-    # save print.pdf 
-    draw_puzzles(sol1, sol2, joinpath(out_folder, "print"), connectors, sizes)
-
-
-    # save text file of puzzle layout with connector indices
-    open(joinpath(out_folder, "puzzle.txt"), "w") do io
-        show(io, "text/plain", sol1)
-        println(io)
-        show(io, "text/plain", sol2)
-    end
-end
 
 entropy(probs) = -sum((p * log2(p) for p in probs))
 
@@ -771,8 +749,8 @@ end
 
 # the saved permutation matrices, will have size (w*out_scale*64, h*out_scale*64)
 # these sizes need to be a multiple of 64
-# calculated automatically to be as big as reasonably possible for SD3.5 medium if out_scale=nothing
-function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_for_solve=30, save=true, check=true, nr_threads=Threads.nthreads())
+# by default calculated automatically to be as big as reasonably possible for SD3.5 medium
+function generate_puzzle(w, h, nr_trials=1000000; max_time_for_solve=30, save=true, check=true, nr_threads=Threads.nthreads())
     nr_threads = clamp(nr_threads, 1, Threads.nthreads())
     println("using $nr_threads threads")
 
@@ -863,7 +841,9 @@ function generate_puzzle(w, h, nr_trials=1000000; out_scale=nothing, max_time_fo
     end
 
     if save
-        save_puzzle(best1, best2, F=out_scale)
+        # saves the puzzles with default parameters
+        # save manually for more control
+        save_puzzles(best1, best2)
     end
 
     best1, best2

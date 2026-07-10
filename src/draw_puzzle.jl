@@ -4,15 +4,15 @@ using Dierckx, PicturaShapes, TikzPictures
 point(angle) = cos(angle), sin(angle)
 
 # define some points which a parametric spline will go through to create a knobly bit
-function random_connector(;
-    max_vertical_offset=0.03,
-    min_vertical_offset=0.005,
-    outer_slide=0.05,
-    radius=0.024,
-)
+function random_connector()
 
+    max_vertical_offset=0.03
+    min_vertical_offset=0.005
+    outer_slide=0.05
+    radius=0.024
     vertical_off1 = min_vertical_offset + (max_vertical_offset - min_vertical_offset) * rand()
     vertical_off2 = min_vertical_offset + (max_vertical_offset - min_vertical_offset) * rand()
+    horizontal_off = 0.025 * (rand() - 0.5)
 
     # map x ∈ [a, b] to [A, B]
     map(x, a, b, A, B) = (x - a) * (B - A) / (b - a) + A
@@ -23,14 +23,17 @@ function random_connector(;
         (0.75 + map(rand(), 0, 1, -outer_slide, +outer_slide), -vertical_off2)
     ]
 
-    # The spline will go through a random point on the circle with center 
+    scale = 0.97
+    scale_horizontally(x) = scale * (x - 0.5) + 0.5
+
+    # The spline will go through a random point on the circle with center
     # at the points and radius
     knob_points = [
-        (0.406, 0.075 - vertical_off1),
-        (0.374, 0.2 - vertical_off1),
-        (0.5, 0.275 - vertical_off1),
-        (0.626, 0.2 - vertical_off2),
-        (0.594, 0.075 - vertical_off2),
+        (scale_horizontally(0.406 + horizontal_off), scale * (0.075 - vertical_off1)),
+        (scale_horizontally(0.374 + horizontal_off), scale * (0.201 - vertical_off1)),
+        (scale_horizontally(0.501 + horizontal_off), scale * (0.275 - vertical_off1)),
+        (scale_horizontally(0.626 + horizontal_off), scale * (0.201 - vertical_off2)),
+        (scale_horizontally(0.594 + horizontal_off), scale * (0.075 - vertical_off2)),
     ]
 
     points = zeros(2, 11)
@@ -59,7 +62,7 @@ function random_connector(;
 end
 
 function random_connectors(n)
-    randoms = [random_connector() for i=1:2n]
+    randoms = [random_connector() for i=1:(5n÷2)]
     splines = [r.spline for r in randoms]
     points = [r.points for r in randoms]
     N = length(randoms)
@@ -96,17 +99,23 @@ function is_below(px, py, ts, spline_points, spline)
 
 end
 
-function draw_path!(io, points)
+
+
+
+
+
+
+function draw_path!(io, points, line_thickness_mm, color::String)
     for i = 1:(length(points)-1)
         p = points[i]
         t = points[i+1]
-        println(io, "\\draw[ultra thin] ($(p.x),$(p.y)) -- ($(t.x), $(t.y));")
+        println(io, "\\draw[$color, line width=$(line_thickness_mm)mm] ($(p.x),$(p.y)) -- ($(t.x), $(t.y));")
     end
 end
 
 # will transform the std_points that define the knob curve to the correct location and draw them
 # side = :right, or :bottom
-function draw_connector!(io, r, c, side, std_points, male=false)
+function draw_connector!(io, r, c, side, std_points, male::Bool, line_thickness_mm, color)
     points = if male
         [PicturaShapes.rotate(p, π) + Point(1, 0) for p in std_points]
     else
@@ -123,50 +132,72 @@ function draw_connector!(io, r, c, side, std_points, male=false)
 
     points = [p + Point(c - 1, r - 1) for p in points]
 
-    draw_path!(io, points)
+    draw_path!(io, points, line_thickness_mm, color)
 end
 
-function draw_border!(io, h, w, sizes)
-    println(io, "\\draw[ultra thin] (0,0) -- (0, $h) -- ($w, $h) -- ($w, 0) -- (0,0);")
+function draw_border!(io, h, w, sizes, has_border, laser_cut, line_thickness_mm, color)
+    if has_border || !laser_cut
+        println(io, "\\draw[$color, line width=$(line_thickness_mm)mm] (0,0) -- (0, $h) -- ($w, $h) -- ($w, 0) -- (0,0);")
+    end
 
     s = sizes
-    tl = (x=(-s.border_w / s.S), y=(-s.border_h / s.S))
-    br = (x=w + s.border_w2 / s.S, y=h + s.border_h2 / s.S)
-    println(io, "\\draw[ultra thin] ($(tl.x), $(tl.y)) -- ($(tl.x), $(br.y)) -- ($(br.x), $(br.y)) -- ($(br.x), $(tl.y)) -- ($(tl.x), $(tl.y));")
+    tl = (x=(-s.border_w / s.pixels_per_piece), y=(-s.border_h / s.pixels_per_piece))
+    br = (x=w + s.border_w2 / s.pixels_per_piece, y=h + s.border_h2 / s.pixels_per_piece)
+    println(io, "\\path ($(tl.x), $(tl.y)) rectangle ($(br.x), $(br.y));")
 end
 
-function draw_puzzle(puzzle, draw_points, pixel_sizes)
+function draw_puzzle(puzzle, draw_points, pixel_sizes, scale, has_border, laser_cut)
     h, w = size(puzzle)
     io = IOBuffer()
 
-    draw_border!(io, h, w, pixel_sizes)
+    line_thickness_mm, color = laser_cut ? (0.01, "red") : (0.035, "black")
+
+    draw_border!(io, h, w, pixel_sizes, has_border, laser_cut, line_thickness_mm, color)
 
     for c = 1:w, r = 1:h
         piece = puzzle[r, c]
         if piece.right != Edge()
-            draw_connector!(io, r, c, :right, draw_points[abs(piece.right.id)], piece.right.id > 0)
+            draw_connector!(io, r, c, :right, draw_points[abs(piece.right.id)], piece.right.id > 0, line_thickness_mm, color)
         end
         if piece.bottom != Edge()
-            draw_connector!(io, r, c, :bottom, draw_points[abs(piece.bottom.id)], piece.bottom.id > 0)
+            draw_connector!(io, r, c, :bottom, draw_points[abs(piece.bottom.id)], piece.bottom.id > 0, line_thickness_mm, color)
         end
     end
 
-    return TikzPicture(String(take!(io)), options="yscale=-1")
+    return TikzPicture(String(take!(io)), options="y=-$(scale)cm, x=$(scale)cm")
 end
 
-# out_type can also be SVG, TEX or TIKZ
-function draw_puzzles(puzzle, puzzle2, out_name::String, connectors, sizes; out_type=PDF)
-    # mirror connectors here, because later we are going to do yscale=-1, which is going to mirror them back
+
+
+
+# outputs tkiz pictures
+function draw_puzzles(
+    puzzle1, puzzle2, connectors, pixel_sizes;
+    target_w_cm=pixel_sizes.total_W / pixel_sizes.pixels_per_piece,
+    target_h_cm=pixel_sizes.total_H / pixel_sizes.pixels_per_piece,
+    has_border=true, laser_cut=false)
+
+    if target_w_cm / target_h_cm > pixel_sizes.total_W / pixel_sizes.total_H
+        target_w_cm = target_h_cm * (pixel_sizes.total_W / pixel_sizes.total_H)
+    else
+        target_h_cm = target_w_cm * (pixel_sizes.total_H / pixel_sizes.total_W)
+    end
+
+    scale = target_w_cm / pixel_sizes.total_W * pixel_sizes.pixels_per_piece # cm per piece
+
     draw_points = [
         [Point(1 - p[1], p[2]) for p in connector.(0:0.01:1)] for connector in connectors
     ]
 
-    picture = draw_puzzle(puzzle, draw_points, sizes)
-    save(out_type(out_name * "1"), picture)
+    picture1 = draw_puzzle(puzzle1, draw_points, pixel_sizes, scale, has_border, laser_cut)
+    picture2 = draw_puzzle(puzzle2, draw_points, pixel_sizes, scale, has_border, laser_cut)
 
-    picture = draw_puzzle(puzzle2, draw_points, sizes)
-    save(out_type(out_name * "2"), picture)
+    return picture1, picture2
+
 end
+
+
+
 
 
 
@@ -288,7 +319,7 @@ end
 
 
 
-function create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
+function create_permutation_maps(puzzle, sol, connectors, W, H, S)
     h, w = size(puzzle)
 
     def_y = reshape(repeat(1:H, W), H, W)
@@ -326,13 +357,13 @@ function create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
 
             if piece == piece2
 
-                for r = 0:3
-                    if to_tuple(rotate(piece, r)) == to_tuple(piece2)
+                for rot = 0:3
+                    if to_tuple(rotate(piece, rot)) == to_tuple(piece2)
 
                         # copy coordinates in array to out with correct rotation
-                        piece_index_array = rotr90(piece_index_array, r)
-                        piece_array_x = rotr90(piece_array_x, r)
-                        piece_array_y = rotr90(piece_array_y, r)
+                        piece_index_array = rotr90(piece_index_array, rot)
+                        piece_array_x = rotr90(piece_array_x, rot)
+                        piece_array_y = rotr90(piece_array_y, rot)
 
                         for i = 1:(2BORDER+S), j = 1:(2BORDER+S)
                             i2, j2 = (r2 - 1) * S + i - BORDER, (c2 - 1) * S + j - BORDER
@@ -340,7 +371,7 @@ function create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
                                 out_x[i2, j2] = piece_array_x[i, j]
                                 out_y[i2, j2] = piece_array_y[i, j]
 
-                                rot_map2[i2, j2] = (4 - r) % 4
+                                rot_map2[i2, j2] = (4 - rot) % 4
                             end
                         end
                         break
@@ -359,32 +390,33 @@ function create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
     return out_x, out_y, rot_map1, rot_map2
 end
 
-
-function get_best_puzzle_size(w, h, target_border, target_size)
-    max_S = target_size / ((w+2*(target_border-0.1))*(h+2*(target_border-0.1))) |> sqrt |> ceil |> Int
-    min_S = target_size / ((w+2*(target_border+0.1))*(h+2*(target_border+0.1))) |> sqrt |> floor |> Int
+function get_best_puzzle_size_with_border(w, h, target_border, target_total_pixels)
+    max_S = target_total_pixels / ((w+2*(target_border-0.2))*(h+2*(target_border-0.2))) |> sqrt |> (x->floor(x, digits=-1, base=8)) |> Int
     scores = []
-    for S=min_S:max_S
+    S_range = max_S:-8:(max_S-8)
+    for S=S_range
         W, H = S .* (w+2*target_border, h+2*target_border)
         W, H = round.((W, H) ./ 64) .* 64
         bh = 0.5 * (H - h*S) / S
         bw = 0.5 * (W - w*S) / S
-        println("$W, $H, $bw, $bh")
-        score = abs(bh - target_border) + abs(bw - target_border) + abs(bw - bh)
+        score = ((bh - target_border)^2 + (bw - target_border)^2 + (bw - bh)^2)
+        println("$S $score: $bh, $bw   : $W, $H")
         push!(scores, score)
     end
 
-    S = (min_S:max_S)[argmin(scores)]
+    S = (S_range)[argmin(scores)]
     puzzle_W, puzzle_H = S .* (w, h)
 
     W, H = S .* (w+2*target_border, h+2*target_border)
     total_W, total_H = round.(Int, (W, H) ./ 64) .* 64
 
-    border_w = floor(Int, (total_W - puzzle_W) / 2)
+    border_w = floor((total_W - puzzle_W) / 2, digits=-1, base=8) |> Int
     border_w2 = total_W - puzzle_W - border_w
 
-    border_h = floor(Int, (total_H - puzzle_H) / 2)
+    border_h = floor((total_H - puzzle_H) / 2, digits=-1, base=8) |> Int
     border_h2 = total_H - puzzle_H - border_h
+
+    println("$(S)x$(S) pixels per piece, overall size: W=$total_W, H=$total_H, border: l=$border_w, t=$border_h, r=$border_w2, b=$border_h2")
 
     return (
         puzzle_W=puzzle_W,
@@ -395,54 +427,30 @@ function get_best_puzzle_size(w, h, target_border, target_size)
         border_w2=border_w2,
         border_h=border_h,
         border_h2=border_h2,
-        S=S
+        pixels_per_piece=S
     )
 end
 
-function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, has_border, F, target_border, target_size)
-    h, w = size(puzzle)
-    sizes = nothing
 
+function get_pixel_sizes(w, h, has_border; target_border=0.5, target_total_pixels=1024*1024, pixels_per_piece=nothing)
     if has_border
-        sizes = get_best_puzzle_size(w, h, target_border, target_size)
-        s = sizes
-        out_x, out_y, rot_map1, rot_map2 = create_permutation_with_round_knobs(puzzle, sol, connectors, s.puzzle_W, s.puzzle_H, s.S)
-
-        # add the border
-        H, W = s.total_H, s.total_W
-        def_y = reshape(repeat(1:H, W), H, W)
-        def_x = transpose(reshape(repeat(1:W, H), W, H))
-
-        def_y[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_y .+ s.border_h
-        def_x[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_x .+ s.border_w
-
-        out_x, out_y = def_x, def_y
-
-        rb1 = zeros(Int, s.total_H, s.total_W)
-        rb1[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map1
-        rb2 = zeros(Int, s.total_H, s.total_W)
-        rb2[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map2
-
-        rot_map1, rot_map2 = rb1, rb2
+        return get_best_puzzle_size_with_border(w, h, target_border, target_total_pixels)
     else
-        if isnothing(F)
-            ub = sqrt(256 / (h * w))
-            M = min(h, w)
-            candidates = [fm for fm in floor(Int, ub*M):-1:1]
-            for c in candidates
-                f = c / M
-                if isinteger(f * W) && isinteger(f * H) && isinteger(f * 64)
-                    F=f
-                    break
-                end
-            end
+        if isnothing(pixels_per_piece)
+
+            g = gcd(w, h, 64)
+            stepsize = 64 ÷ g
+            s = sqrt((1.1 * target_total_pixels) / (w * h)) / stepsize |> floor |> Int
+            pixels_per_piece = s * stepsize
+
         end
 
-        S = Int(64 * F)
-        H, W = S .* (h, w)
-        out_x, out_y, rot_map1, rot_map2 = create_permutation_with_round_knobs(puzzle, sol, connectors, W, H, S)
+        @assert pixels_per_piece % 8 == 0 # otherwise there will be problems with image generation... 
+        # (cant downsample residual error anymore without destroying signal by averaging across latent pixel boundaries)
 
-        sizes = (
+        H, W = pixels_per_piece .* (h, w)
+
+        return (
             puzzle_W=W,
             puzzle_H=H,
             total_W=W,
@@ -451,18 +459,130 @@ function save_permutation_with_round_knobs(puzzle, sol, connectors, out_folder, 
             border_w2=0,
             border_h=0,
             border_h2=0,
-            S=S
+            pixels_per_piece=pixels_per_piece
         )
+
+    end
+end
+
+function get_latent_pixel_sizes(pixel_sizes)
+    s = pixel_sizes
+    return (
+        puzzle_W=Int(s.puzzle_W / 8),
+        puzzle_H=Int(s.puzzle_H / 8),
+        total_W=Int(s.total_W / 8),
+        total_H=Int(s.total_H / 8),
+        border_w=Int(s.border_w / 8),
+        border_w2=Int(s.border_w2 / 8),
+        border_h=Int(s.border_h / 8),
+        border_h2=Int(s.border_h2 / 8),
+        pixels_per_piece=Int(s.pixels_per_piece / 8),
+    )
+end
+
+function add_border(out_x, out_y, rot_map1, rot_map2, pixel_sizes)
+    s = pixel_sizes
+    H, W = s.total_H, s.total_W
+    def_y = reshape(repeat(1:H, W), H, W)
+    def_x = transpose(reshape(repeat(1:W, H), W, H))
+
+    def_y[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_y .+ s.border_h
+    def_x[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= out_x .+ s.border_w
+
+    out_x, out_y = def_x, def_y
+
+    rb1 = zeros(Int, s.total_H, s.total_W)
+    rb1[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map1
+    rb2 = zeros(Int, s.total_H, s.total_W)
+    rb2[(s.border_h+1):(s.border_h+s.puzzle_H), (s.border_w+1):(s.border_w+s.puzzle_W)] .= rot_map2
+
+    rot_map1, rot_map2 = rb1, rb2
+
+    return out_x, out_y, rot_map1, rot_map2
+end
+
+function save_permutation_maps(puzzle, sol, connectors, out_folder, has_border, pixel_sizes, out_name; save_rot_map=false)
+    h, w = size(puzzle)
+    s = pixel_sizes
+
+    out_x, out_y, rot_map1, rot_map2 = create_permutation_maps(puzzle, sol, connectors, s.puzzle_W, s.puzzle_H, s.pixels_per_piece)
+
+    if has_border
+        out_x, out_y, rot_map1, rot_map2 = add_border(out_x, out_y, rot_map1, rot_map2, pixel_sizes)
     end
 
-    rot1 = downsample_rotation_map(rot_map1)
-    rot2 = downsample_rotation_map(rot_map2)
+    CSV.write(joinpath(out_folder, out_name * "x.csv"), Tables.table(out_x), writeheader=false)
+    CSV.write(joinpath(out_folder, out_name * "y.csv"), Tables.table(out_y), writeheader=false)
 
-    CSV.write(joinpath(out_folder, "perm_x.csv"), Tables.table(out_x), writeheader=false)
-    CSV.write(joinpath(out_folder, "perm_y.csv"), Tables.table(out_y), writeheader=false)
+    if save_rot_map
 
-    CSV.write(joinpath(out_folder, "rot1.csv"), Tables.table(rot1), writeheader=false)
-    CSV.write(joinpath(out_folder, "rot2.csv"), Tables.table(rot2), writeheader=false)
+        CSV.write(joinpath(out_folder, "rot1.csv"), Tables.table(rot_map1), writeheader=false)
+        CSV.write(joinpath(out_folder, "rot2.csv"), Tables.table(rot_map2), writeheader=false)
 
-    return sizes
+    end
+
+end
+
+
+
+save_puzzle(picture, out_path) = save(PDF(out_path), picture)
+
+function save_puzzles(
+    sol1, sol2;
+    has_border=true,
+    target_dims_w_h_cm::Union{Nothing,Tuple{Float64,Float64}}=nothing,
+)
+
+    h, w = size(sol1)
+    nr_connectors = length(nr_connections(sol1))
+    connectors = random_connectors(nr_connectors)
+
+    out_folder = joinpath(@__DIR__, "..", "puzzles", "$(w)x$(h)")
+    mkpath(out_folder)
+
+    pixel_sizes = get_pixel_sizes(w, h, has_border)
+    save_permutation_maps(sol1, sol2, connectors, out_folder, has_border, pixel_sizes, "perm_"; save_rot_map=false)
+    latent_pixel_sizes = get_latent_pixel_sizes(pixel_sizes)
+    save_permutation_maps(sol1, sol2, connectors, out_folder, has_border, latent_pixel_sizes, "latent_perm_"; save_rot_map=true)
+
+    # save print.pdf 
+    if isnothing(target_dims_w_h_cm)
+        p1, p2 = draw_puzzles(sol1, sol2, connectors, pixel_sizes, has_border=has_border, laser_cut=false)
+        c1, c2 = draw_puzzles(sol1, sol2, connectors, pixel_sizes, has_border=has_border, laser_cut=true)
+    else
+        w_cm, h_cm = target_dims_w_h_cm
+        p1, p2 = draw_puzzles(sol1, sol2, connectors, pixel_sizes, has_border=has_border, laser_cut=false, target_w_cm=w_cm, target_h_cm=h_cm)
+        c1, c2 = draw_puzzles(sol1, sol2, connectors, pixel_sizes, has_border=has_border, laser_cut=true, target_w_cm=w_cm, target_h_cm=h_cm)
+    end
+
+    save_puzzle(p1, joinpath(out_folder, "print1"))
+    save_puzzle(p2, joinpath(out_folder, "print2"))
+
+    save_puzzle(c1, joinpath(out_folder, "cut1"))
+    save_puzzle(c2, joinpath(out_folder, "cut2"))
+
+
+    # save text file of puzzle layout with connector indices
+    open(joinpath(out_folder, "puzzle.txt"), "w") do io
+        show(io, "text/plain", sol1)
+        println(io)
+        show(io, "text/plain", sol2)
+    end
+
+    # save as julia code
+    open(joinpath(out_folder, "sol1.jl"), "w") do io
+        println(io, sol1)
+    end
+    open(joinpath(out_folder, "sol2.jl"), "w") do io
+        println(io, sol2)
+    end
+end
+
+
+
+function load_puzzles(w, h)
+    folder = joinpath(@__DIR__, "..", "puzzles", "$(w)x$(h)")
+    p1 = include(joinpath(folder, "sol1.jl"))
+    p2 = include(joinpath(folder, "sol2.jl"))
+    p1, p2
 end

@@ -168,6 +168,13 @@ def load_latent_transform_data(puzzle_w, puzzle_h):
 
     invpermutex, invpermutey = inverse_permutation(permutex, permutey)
 
+    latent_datax = np.loadtxt(os.path.join(puzzle_path, "latent_perm_x.csv"), delimiter=',')
+    latent_datay = np.loadtxt(os.path.join(puzzle_path, "latent_perm_y.csv"), delimiter=',')
+    latent_permutex = (torch.from_numpy(latent_datax) - latent_datax.min()).long()
+    latent_permutey = (torch.from_numpy(latent_datay) - latent_datay.min()).long()
+
+    latent_invpermutex, latent_invpermutey = inverse_permutation(latent_permutex, latent_permutey)
+
     rot_map1 = torch.from_numpy(np.loadtxt(os.path.join(puzzle_path, "rot1.csv"), delimiter=',')).long().to("cuda")
     rot_map2 = torch.from_numpy(np.loadtxt(os.path.join(puzzle_path, "rot2.csv"), delimiter=',')).long().to("cuda")
 
@@ -188,7 +195,10 @@ def load_latent_transform_data(puzzle_w, puzzle_h):
     rot180fn.to("cuda")
     rot270fn.to("cuda")
 
-    latent_transform_data = permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn
+    perm_data = permutey, permutex, invpermutey, invpermutex
+    latent_perm_data = latent_permutex, latent_permutey, latent_invpermutex, latent_invpermutey
+
+    latent_transform_data = perm_data, latent_perm_data, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn
 
     return latent_transform_data
 
@@ -211,32 +221,24 @@ def apply_view_to_latents(latents, permutex, permutey):
 
 
 def latent_transform(latents, latent_transform_data):
-    permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    perm_data, latent_perm_data, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    latent_permutex, latent_permutey, latent_invpermutex, latent_invpermutey = latent_perm_data
     BS, C, H, W = latents.shape
     samples = latent_img_to_in_samples(latents).float()
     rotated90 = rot90fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated180 = rot180fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated270 = rot270fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated = latents * (rot_map1 == 0) + rotated90 * (rot_map1 == 1) + rotated180 * (rot_map1 == 2)  + rotated270 * (rot_map1 == 3) 
-    expanded = rotated.unsqueeze(3).unsqueeze(5).expand(BS, C, H, 8, W, 8).reshape(BS, C, 8*H, 8*W)
-    transformed = expanded[:, :, permutey, permutex]
-    pooled = torch.nn.functional.avg_pool2d(transformed, kernel_size=8, stride=8)
-    assert pooled.shape == latents.shape
-
-    return pooled.to(torch.bfloat16)
+    return rotated[:, :, latent_permutey, latent_permutex].to(torch.bfloat16)
 
 
 def latent_inv_transform(latents, latent_transform_data):
-    permutey, permutex, invpermutey, invpermutex, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    perm_data, latent_perm_data, rot_map1, rot_map2, rot90fn, rot180fn, rot270fn = latent_transform_data
+    latent_permutex, latent_permutey, latent_invpermutex, latent_invpermutey = latent_perm_data
     BS, C, H, W = latents.shape
     samples = latent_img_to_in_samples(latents).float()
     rotated90 = rot90fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated180 = rot180fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated270 = rot270fn(samples).reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, C, H, W)
     rotated = latents * (rot_map2 == 0) + rotated90 * (rot_map2 == 1) + rotated180 * (rot_map2 == 2)  + rotated270 * (rot_map2 == 3) 
-    expanded = rotated.unsqueeze(3).unsqueeze(5).expand(BS, C, H, 8, W, 8).reshape(BS, C, 8*H, 8*W)
-    transformed = expanded[:, :, invpermutey, invpermutex]
-    pooled = torch.nn.functional.avg_pool2d(transformed, kernel_size=8, stride=8)
-    assert pooled.shape == latents.shape
-
-    return pooled.to(torch.bfloat16)
+    return rotated[:, :, latent_invpermutey, latent_invpermutex].to(torch.bfloat16)
