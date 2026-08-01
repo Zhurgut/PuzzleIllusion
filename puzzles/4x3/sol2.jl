@@ -1,0 +1,1 @@
+Piece[Piece(l=0, t=0, b=-2, r=-6) Piece(l=6, t=0, b=5, r=-6) Piece(l=6, t=0, b=-4, r=-3) Piece(l=3, t=0, b=1, r=0); Piece(l=0, t=2, b=-1, r=4) Piece(l=-4, t=-5, b=-5, r=4) Piece(l=-4, t=4, b=7, r=7) Piece(l=-7, t=-1, b=-3, r=0); Piece(l=0, t=1, b=0, r=-2) Piece(l=2, t=5, b=0, r=-2) Piece(l=2, t=-7, b=0, r=6) Piece(l=-6, t=3, b=0, r=0)]
