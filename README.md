@@ -3,9 +3,16 @@
 In this repo, I'm sharing code to create jigsaw puzzles that have two distinct solutions, where the two solutions display different images. 
 
 <div style="display: flex; gap: 10px;">
-  <img src="assets/donutmug7.png" style="width: 49%; height: auto;" />
-  <img src="assets/donutmug8.png" style="width: 49%; height: auto;" />
-</div> 
+  <figure style="width: 49%; margin: 0; text-align: center;">
+    <img src="assets/domug11_1wl.png" style="width: 100%; height: auto;" />
+    <figcaption style="margin-top: 5px; font-size: 0.9em; color: gray;">Painting of a Donut</figcaption>
+  </figure>
+  <figure style="width: 49%; margin: 0; text-align: center;">
+    <img src="assets/domug11_2wl.png" style="width: 100%; height: auto;" />
+    <figcaption style="margin-top: 5px; font-size: 0.9em; color: gray;">Painting of a Coffe Mug</figcaption>
+  </figure>
+</div>
+
 
 
 ## Inspiration and Background
