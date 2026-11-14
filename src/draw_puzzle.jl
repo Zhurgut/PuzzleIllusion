@@ -61,18 +61,30 @@ function random_connector()
     return (spline=spl, points=[PicturaShapes.Point(points[1, i], points[2, i]) for i in 3:9])
 end
 
-function random_connectors(n)
-    randoms = [random_connector() for i=1:(5n÷2)]
+function shuffle!(x)
+    n = length(x)
+    for i=1:n
+        j = rand(1:n)
+        x[i], x[j] = x[j], x[i]
+    end
+end
+
+function random_connectors(n; nr_options=5000)
+    M = 50 # dont need to make the full matrix just to find a good starting point
+    N = max(nr_options, M)
+    randoms = [random_connector() for i=1:N]
     splines = [r.spline for r in randoms]
     points = [r.points for r in randoms]
-    N = length(randoms)
 
-    distance(ps1, ps2) = sum(PicturaShapes.sdf(ps1[i], ps2[i]) for i in eachindex(ps1))
+    closest(p, points) = points[argmin(PicturaShapes.sdf(p, p2) for p2 in points)]
+    distance(points1, points2) = maximum(PicturaShapes.sdf(p1, closest(p1, points2)) for p1 in points1)
 
-    dists = zeros(Float64, N, N)
-    for i=1:N, j=(i+1):N
+
+    dists = zeros(Float64, N, M)
+    for i=1:N, j=(i+1):M
         dists[i, j] = distance(points[i], points[j])
     end
+
     mx = argmax(dists)
     out_indeces = [mx.I[1], mx.I[2]]
 
@@ -82,7 +94,9 @@ function random_connectors(n)
         insert!(out_indeces, rand(1:(length(out_indeces)+1)), argmax(min_dists))
     end
 
-    return splines[out_indeces]
+    out = splines[out_indeces]
+    shuffle!(out)
+    return out
 end
 
 # tells if (px, py) is below the curve defined by the knob spline
@@ -106,11 +120,13 @@ end
 
 
 function draw_path!(io, points, line_thickness_mm, color::String)
-    for i = 1:(length(points)-1)
+    p = points[1]
+    print(io, "\\draw[$color, line width=$(line_thickness_mm)mm] ($(p.x),$(p.y))")
+    for i = 2:length(points)
         p = points[i]
-        t = points[i+1]
-        println(io, "\\draw[$color, line width=$(line_thickness_mm)mm] ($(p.x),$(p.y)) -- ($(t.x), $(t.y));")
+        print(io, " -- ($(p.x),$(p.y))")
     end
+    println(io, ";")
 end
 
 # will transform the std_points that define the knob curve to the correct location and draw them
@@ -150,7 +166,7 @@ function draw_puzzle(puzzle, draw_points, pixel_sizes, scale, has_border, laser_
     h, w = size(puzzle)
     io = IOBuffer()
 
-    line_thickness_mm, color = laser_cut ? (0.01, "red") : (0.035, "black")
+    line_thickness_mm, color = laser_cut ? (0.01, "red") : (0.07, "black")
 
     draw_border!(io, h, w, pixel_sizes, has_border, laser_cut, line_thickness_mm, color)
 
