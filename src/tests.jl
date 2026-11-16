@@ -41,16 +41,16 @@ function generate_stats(w, h, nr_trials=100, test=false)
         # the problem is NP complete https://en.wikipedia.org/wiki/Edge-matching_puzzle
         # but we can check some obvious things to make sure there arent any additional solutions
 
-        
+
 
         pieces_unique = pieces_are_unique(sol1)
-        
+
         if test
             success, sols = get_all_solutions(sol1)
             nr_sols = length(sols)
             @assert !success || nr_sols >= 2
         end
-        
+
         if (test && (success || nr_sols > 2)) || (!test && pieces_unique)
             if test
                 @test pieces_unique || nr_sols > 2
@@ -62,9 +62,9 @@ function generate_stats(w, h, nr_trials=100, test=false)
             success, sols = get_all_solutions(sol1)
             nr_sols = length(sols)
 
-            pieces_symmetric = rot_symmetric_pieces_exist(sol1) 
-            pairs_exist1 = same_pair_exists(sol1) 
-            pairs_exist2 = same_pair_exists(sol2) 
+            pieces_symmetric = rot_symmetric_pieces_exist(sol1)
+            pairs_exist1 = same_pair_exists(sol1)
+            pairs_exist2 = same_pair_exists(sol2)
 
             all_pieces_unique += Int(pieces_unique)
             pieces_not_rot_symmetric += Int(!pieces_symmetric)
@@ -73,7 +73,7 @@ function generate_stats(w, h, nr_trials=100, test=false)
 
             outer = length(stats)
             inner = nr_connections_inside(sol1)
-            
+
             push!(all_nr_sols, nr_sols)
             push!(all_nr_connections, outer)
             push!(all_nr_inner_connections, inner)
@@ -86,7 +86,7 @@ function generate_stats(w, h, nr_trials=100, test=false)
         end
 
     end
-    
+
     println("$all_pieces_unique / $nr_trials: all pieces are unique")
     println("$pieces_not_rot_symmetric / $nr_trials: no pieces are rotationally symmetric")
     println("$no_same_pairs_exist / $nr_trials: all pairs of two pieces are distinct")
@@ -126,8 +126,8 @@ end
 
 
 
-ref = default_puzzle(8,8)
-test_puzzle = default_puzzle(8,8)
+ref = default_puzzle(8, 8)
+test_puzzle = default_puzzle(8, 8)
 random_puzzle!(ref, test_puzzle)
 resolve_connections!(ref, test_puzzle)
 while same_pair_exists(test_puzzle)
@@ -140,7 +140,7 @@ using BenchmarkTools
 @btime pieces_are_unique(test_puzzle)
 @btime pieces_are_unique2(test_puzzle)
 
-let pieces::Vector{NTuple{4, Int16}} = NTuple{4, Int}[]
+let pieces::Vector{NTuple{4,Int16}} = NTuple{4,Int}[]
 
     global function pieces_are_unique2(puzzle)
         empty!(pieces)
@@ -152,7 +152,7 @@ let pieces::Vector{NTuple{4, Int16}} = NTuple{4, Int}[]
 
         sort!(pieces, alg=QuickSort)
 
-        for i = 1:length(pieces)-1
+        for i = 1:(length(pieces)-1)
             if pieces[i] == pieces[i+1]
                 return false
             end
@@ -176,8 +176,8 @@ end
 @time test_unique()
 
 function test_pairs()
-    ref = default_puzzle(8,8)
-    test_puzzle = default_puzzle(8,8)
+    ref = default_puzzle(8, 8)
+    test_puzzle = default_puzzle(8, 8)
     for i=1:20000
         same_pair_exists2(test_puzzle)
         random_puzzle!(ref, test_puzzle)
@@ -201,7 +201,7 @@ end
 
 
 
-let pairs::Vector{NTuple{6, Int16}} = []
+let pairs::Vector{NTuple{6,Int16}} = []
 
     function tuple(p1, p2)
         Int16.((p1.left.id, p1.top.id, p2.top.id, p2.right.id, p2.bottom.id, p1.bottom.id))
@@ -210,7 +210,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
     global function same_pair_exists2(puzzle)
         h, w = size(puzzle)
         empty!(pairs)
-        for c=1:w-1, r=1:h
+        for c=1:(w-1), r=1:h
             p1 = puzzle[r, c]
             p2 = puzzle[r, c+1]
 
@@ -223,11 +223,11 @@ let pairs::Vector{NTuple{6, Int16}} = []
                     end
                 end
             end
-            
+
             push!(pairs, tuple(p1, p2))
             push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
-        for c=1:w, r=1:h-1
+        for c=1:w, r=1:(h-1)
             p1 = rotate(puzzle[r, c], -1)
             p2 = rotate(puzzle[r+1, c], -1)
 
@@ -240,7 +240,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
                     end
                 end
             end
-            
+
             push!(pairs, tuple(p1, p2))
             push!(pairs, tuple(rotate(p2, 2), rotate(p1, 2)))
         end
@@ -248,7 +248,7 @@ let pairs::Vector{NTuple{6, Int16}} = []
         sort!(pairs, alg=QuickSort)
 
         n = length(pairs)
-        for i=1:n-1
+        for i=1:(n-1)
             if pairs[i] == pairs[i+1]
                 return true
             end
@@ -256,5 +256,159 @@ let pairs::Vector{NTuple{6, Int16}} = []
 
         return false
     end
+
+end
+
+
+begin
+    # generate puzzles for all sizes
+    sizes = [(4, 3), (4, 4), (6, 4), (5, 5), (7, 5), (5, 7), (6, 6), (9, 5), (7, 7), (12, 5), (8, 8), (10, 7), (6, 12), (9, 9), (12, 7), (14, 6), (10, 10)]
+    redo = [(12, 5)]
+    for (w, h) in sizes
+        println("[$w x $h]")
+        generate_puzzle(w, h, 40_000_000 * (w*h) ÷ 100, max_time_for_solve=30)
+        println()
+    end
+end
+
+begin
+    A4_sizes = [(4, 3), (6, 4), (7, 5), (10, 7), (12, 9), (13, 9)]
+
+    for (w, h) in A4_sizes
+        println("[$w x $h]")
+        s1, s2 = load_puzzles(w, h)
+        save_puzzles(s1, s2, target_dims_w_h_cm=(28.7, 20.0))
+        println()
+    end
+
+    s1, s2 = load_puzzles(5, 7)
+    save_puzzles(s1, s2, target_dims_w_h_cm=(20.0, 28.7))
+
+    sizes_16_by_9_and_21_by_9 = [(9, 5), (12, 7), (12, 5), (14, 6)]
+
+    for (w, h) in sizes_16_by_9_and_21_by_9
+        println("[$w x $h]")
+        s1, s2 = load_puzzles(w, h)
+        save_puzzles(s1, s2, has_border=false)
+        println()
+    end
+
+    other = [(4, 4), (5, 5), (6, 6), (7, 7), (8, 8), (6, 12), (9, 9), (10, 10), (11, 11)]
+
+    for (w, h) in other
+        println("[$w x $h]")
+        s1, s2 = load_puzzles(w, h)
+        save_puzzles(s1, s2)
+        println()
+    end
+end
+
+
+begin
+
+
+end
+
+
+begin
+    w, h = 4, 4
+    while w < 11
+        println("[$w x $h]")
+        generate_puzzle(w, h, 240_000_000 * (w*h) ÷ 100, max_time_for_solve=10, save=false)
+        println()
+
+        w += 1
+
+        println("[$w x $h]")
+        generate_puzzle(w, h, 240_000_000 * (w*h) ÷ 100, max_time_for_solve=10, save=false)
+        println()
+
+        h += 1
+    end
+end
+
+
+nr_connectors = Dict(
+    (4, 4) => (entropy=5.28, total=9, inner=5, outer=4),
+    (5, 4) => (entropy=5.78, total=11, inner=5, outer=6),
+    (5, 5) => (entropy=6.14, total=14, inner=6, outer=8),
+    (6, 5) => (entropy=6.35, total=14, inner=7, outer=8),
+    (6, 6) => (entropy=6.55, total=16, inner=10, outer=8),
+    (7, 6) => (entropy=6.74, total=15, inner=9, outer=8),
+    (7, 7) => (entropy=6.92, total=16, inner=8, outer=8),
+    (8, 7) => (entropy=7.07, total=15, inner=9, outer=8),
+    (8, 8) => (entropy=7.19, total=17, inner=10, outer=8),
+    (9, 8) => (entropy=7.44, total=18, inner=10, outer=8),
+    (9, 9) => (entropy=7.48, total=18, inner=10, outer=8),
+    (10, 9) => (entropy=7.55, total=17, inner=11, outer=8),
+    (10, 10) => (entropy=7.58, total=16, inner=9, outer=8),
+)
+
+function nr_possible_pieces(nr_inner, w, h)
+    n = 2 * nr_inner # innies and outies
+    upper_bound = n^4
+    # but need to filter out rotationally symmetric pieces 
+    # one kind of rotational symmetry is when all connectors of a piece are the same
+    rotsym = n^2
+    unique = upper_bound - rotsym
+
+    probability_all_unique = prod((unique - i) / unique for i=0:((w-1)*(h-1)-1))
+    probability_non_rot_symmetric = ((upper_bound - rotsym) / upper_bound) ^ ((w-1)*(h-1))
+
+    return probability_all_unique, probability_non_rot_symmetric
+end
+
+function swap_pieces(s1, s2, i1, i2, rot)
+    s2[i1] = rotate(s1[i2], rot)
+    s2[i2] = rotate(s1[i1], rot)
+end
+
+function structured_puzzle(w, h)
+    @assert iseven(w+h)
+    def = default_puzzle(w, h)
+    s2 = default_puzzle(w, h)
+
+    right = (0, 1)
+    left = (0, -1)
+    up = (-1, 0)
+    down = (1, 0)
+
+    layers = (min(w, h)+1) ÷ 2
+    for layer in 1:layers
+        tl = (layer, layer)
+        br = (h + 1 - layer, w + 1 - layer)
+        crt1 = tl
+        crt2 = br
+
+        swap = false
+        while crt1[2]+1 <= br[2]
+            println("-> swap $crt1 to $crt2? $swap")
+            if swap
+
+                swap_pieces(def, s2, CartesianIndex(crt1), CartesianIndex(crt2), 2)
+            end
+
+            crt1 = crt1 .+ right
+            crt2 = crt2 .+ left
+            swap = !swap
+        end
+
+        while crt1[1] <= br[1]
+            println("V swap $crt1 to $crt2? $swap")
+            if swap
+                swap_pieces(def, s2, CartesianIndex(crt1), CartesianIndex(crt2), 2)
+            end
+
+            crt1 = crt1 .+ down
+            crt2 = crt2 .+ up
+            swap = !swap
+        end
+
+    end
+
+    resolve_connections!(Matrix{Bool}(undef, 1024, 1024), Vector{Int}(undef, 30), def, s2)
+
+    return def, s2
+
 
 end

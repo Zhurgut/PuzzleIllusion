@@ -5,6 +5,13 @@ import math
 
 pipeline = helpers.pipeline
 
+time_travel_settings = {
+    "start" : 0.9,
+    "end" : 0.5,
+    "nr_steps" : 1,
+    "gamma" : 0.8, # bigger gamma -> less new noise
+}
+
 def estimate_clean(latents, s, noise_preds, LT_data):
         
         perm_data, _, _, _, _, _, _ = LT_data
@@ -25,8 +32,8 @@ def estimate_clean(latents, s, noise_preds, LT_data):
         # if s > 0.2:
         residuals = target_latents - helpers.encode2(target)
 
-        res1 = 0.6 * (residuals[0:1] + helpers.latent_inv_transform(residuals[1:2], LT_data))
-        res2 = 0.6 * (residuals[1:2] + helpers.latent_transform(residuals[0:1], LT_data))
+        res1 = 0.5 * (residuals[0:1] + helpers.latent_inv_transform(residuals[1:2], LT_data))
+        res2 = 0.5 * (residuals[1:2] + helpers.latent_transform(residuals[0:1], LT_data))
         
         # equation 8
         res = torch.cat([res1, res2])
@@ -44,7 +51,7 @@ def optimize(
     LT_data,
     refine_seperately,
     refine_seperately_amount,
-    time_travel, time_travel_steps, time_travel_gamma,
+    time_travel,
 ):
     
     perm_data, _, _, _, _, _, _ = LT_data
@@ -55,7 +62,8 @@ def optimize(
 
     helpers.prepare_scheduler(num_inference_steps, i)
     s = pipeline.scheduler.sigmas
-    total_steps = num_inference_steps + time_travel * time_travel_steps * sum((0.2 < s) * (s < 0.8))
+    start, end = time_travel_settings["start"], time_travel_settings["end"]
+    total_steps = num_inference_steps + time_travel * time_travel_settings["nr_steps"] * sum((end < s) * (s < start))
    
     # 7. Denoising loop
     with pipeline.progress_bar(total=total_steps.item()) as progress_bar:
@@ -75,14 +83,15 @@ def optimize(
                 progress_bar.update()
                 continue
 
-            if time_travel and 0.2 < s < 0.8 and not time_traveled[i]:
+            if time_travel and time_travel_settings["start"] > s > time_travel_settings["end"] and not time_traveled[i]:
                 time_traveled[i] = True
                 x0 = latents - s * noise_preds
                 noise = (latents - (1-s)*x0) / s
                 noise2 = torch.randn_like(noise)
                 noise2[1:2] = helpers.latent_transform(noise2[0:1], LT_data)
-                new_noise = time_travel_gamma * noise + math.sqrt(1 - time_travel_gamma ** 2) * noise2
-                i = i-time_travel_steps
+                g = time_travel_settings["gamma"]
+                new_noise = g * noise + math.sqrt(1 - g ** 2) * noise2
+                i = i - time_travel_settings["nr_steps"]
                 prev_s = pipeline.scheduler.sigmas[i]
                 latents = (1 - prev_s) * x0 + prev_s * new_noise
                 continue
@@ -123,9 +132,7 @@ def generate(
     negative_prompt2="",
     refine_seperately=False,
     refine_seperately_amount=0.3,
-    time_travel=True,
-    time_travel_steps=1,
-    time_travel_gamma=0.85, # bigger gamma -> less new noise
+    time_travel=False,
     seed=None
 ):
     with torch.no_grad():
@@ -136,7 +143,9 @@ def generate(
 
         prompt_embeds = helpers.encode_prompts([prompt1, prompt2], [negative_prompt1, negative_prompt2])
 
-        LT_data = helpers.load_latent_transform_data(puzzle_w, puzzle_h)
+        # LT_data = helpers.load_latent_transform_data(puzzle_w, puzzle_h, helpers.LT.mlp, kernel_size=3, padding=1)
+        # LT_data = helpers.load_latent_transform_data(puzzle_w, puzzle_h, helpers.LT.linear, kernel_size=1, padding=0, inv_weight=2)
+        LT_data = helpers.load_latent_transform_data(puzzle_w, puzzle_h, helpers.LT.linear, kernel_size=1, padding=0, inv_weight=2)
         perm_data, _, _, _, _, _, _ = LT_data
         permutey, permutex, invpermutey, invpermutex = perm_data
 
@@ -160,7 +169,7 @@ def generate(
             num_inference_steps, guidance_scale,
             LT_data,
             refine_seperately, refine_seperately_amount,
-            time_travel, time_travel_steps, time_travel_gamma,
+            time_travel,
         )
 
 

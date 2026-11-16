@@ -177,13 +177,13 @@ end
 function piece_fits(p, r, c, puzzle)
     above, toright, toleft, below = puzzle[r-1, c], puzzle[r, c+1], puzzle[r, c-1], puzzle[r+1, c]
     return is_fit(above.bottom, p.top) && is_fit(toright.left, p.right) &&
-           is_fit(toleft.right, p.left) && is_fit(below.top, p.bottom)
+        is_fit(toleft.right, p.left) && is_fit(below.top, p.bottom)
 end
 
 function piece_fits_nowhere(p, r, c, puzzle)
     above, toright, toleft, below = puzzle[r-1, c], puzzle[r, c+1], puzzle[r, c-1], puzzle[r+1, c]
     return !is_fit(above.bottom, p.top) && !is_fit(toright.left, p.right) &&
-           !is_fit(toleft.right, p.left) && !is_fit(below.top, p.bottom)
+        !is_fit(toleft.right, p.left) && !is_fit(below.top, p.bottom)
 end
 
 # put solution 1 into sol1, and permuted solution 2 into out
@@ -480,7 +480,7 @@ function all_solutions!(solution, piece_map, next_r, next_c, solutions; start_ti
         p = pieces[i]
 
         if (isnothing(required_right) || p.right == required_right) &&
-           (isnothing(required_bottom) || p.bottom == required_bottom)
+            (isnothing(required_bottom) || p.bottom == required_bottom)
 
             solution[next_r, next_c] = p
 
@@ -571,13 +571,12 @@ function parallel_all_solutions!(solution, piece_map, next_r, next_c, all_solved
 
     Threads.@threads for t_id in 1:nr_threads
 
-        if (isnothing(required_right) || p.right == required_right) &&
-           (isnothing(required_bottom) || p.bottom == required_bottom)
+        let
+            p = pieces[t_id]
 
-            solutions[t_id][next_r, next_c] = pieces[t_id]
-
-            let
-                p = pieces[t_id]
+            if (isnothing(required_right) || p.right == required_right) &&
+                (isnothing(required_bottom) || p.bottom == required_bottom)
+                solutions[t_id][next_r, next_c] = pieces[t_id]
 
                 r1, r2, r3, r4 = allrotations(p)
                 P1 = piece_maps[t_id][r1.left.id, r1.top.id]

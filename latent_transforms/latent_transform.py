@@ -15,134 +15,191 @@ import gc
 gc.collect()
 torch.cuda.empty_cache()
 
-def decode(Z):
-    BS, C, H, W= Z.shape
-    X = torch.empty(BS, 3, 8*H, 8*W, device=Z.device)
-    t = BS // 8 * 8
 
-    for i in range(0, t, 8):
+KERNEL_SIZE = 3
+PADDING = 1
+IMG_DIM = 64 # latent images in the dataset have size 64 x 64 pixels 
+
+def model_in_dim():
+    return 16 * (KERNEL_SIZE ** 2)
+
+def model_out_dim():
+    return 16
+
+
+def latent_img_to_in_samples(img):
+    BS, C, H, W = img.shape # BS_IN, 16, H, W
+    samples = torch.nn.functional.unfold(img, KERNEL_SIZE, padding=PADDING).permute((0, 2, 1))
+    BS, N, D = samples.shape
+    assert D == model_in_dim()
+    return samples.reshape(BS*N, D)
+
+def latent_img_to_out_samples(img):
+    BS, C, H, W = img.shape # BS_IN, 16, H, W
+    samples = torch.nn.functional.unfold(img, 1, padding=0).permute((0, 2, 1))
+    BS, N, D = samples.shape
+    assert D == model_out_dim()
+    return samples.reshape(BS*N, D)
+
+
+def out_samples_to_latent_img(samples, BS, H=IMG_DIM, W=IMG_DIM):
+    BS_OUT, D = samples.shape # BS_OUT, 16
+    assert D == model_out_dim()
+    return samples.reshape(BS, -1, 16).permute(0, 2, 1).reshape(BS, 16, H, W)
+
+
+def decode(latent_batch):
+    Z = latent_batch
+    BS, C, H, W = Z.shape # BS, 16, 64, 64
+    X = torch.empty(BS, 3, 8*H, 8*W, device=Z.device)
+
+    assert BS % 8 == 0
+    for i in range(0, BS, 8):
         X[i:i+8, :, :, :] = helpers.decode(Z[i:i+8, :, :, :])
-    X[t:BS, :, :, :] = helpers.decode(Z[t:BS, :, :, :])
 
     return X
 
 def encode(X):
-    BS, C, H, W= X.shape
-    Z = torch.empty(BS, 16, H // 8, W // 8, device=X.device, dtype=torch.bfloat16)
-    t = BS // 8 * 8
+    BS, C, H, W = X.shape # BS, 3, 512, 512
+    Z = torch.empty(BS, 16, IMG_DIM, IMG_DIM, device=X.device, dtype=torch.bfloat16)
 
-    for i in range(0, t, 8):
+    assert BS % 8 == 0
+    for i in range(0, BS, 8):
         Z[i:i+8, :, :, :] = helpers.encode(X[i:i+8, :, :, :])
-    Z[t:BS, :, :, :] = helpers.encode(X[t:BS, :, :, :])
 
     return Z
 
+def rotate90(img, r):
+    return torch.rot90(img, r, (3, 2))
 
-def generate_dataset(nr_samples):
+def apply_ideal_model(latents, rot):
+    return encode(rotate90(decode(latents), rot))
+
+def apply_model(latents, model, rot):
+    if rot==0:
+        return latents
+
+    samples = latent_img_to_in_samples(latents)
+    out = model(samples)
+    out_img = out_samples_to_latent_img(out, latents.shape[0])
+    return rotate90(out_img, rot)
+
+
+def generate_dataset(min_nr_samples):
     with torch.no_grad():
-        img_size = 64
-        nr_images = nr_samples // (img_size ** 2) + 1
-        noise = 3 * torch.randn(nr_images, 16, img_size, img_size, device="cuda", dtype=torch.bfloat16)
+        nr_images = min_nr_samples // (IMG_DIM ** 2)
+        BS = (nr_images // 8 + 1) * 8
+        noise = 1 * torch.randn(BS, 16, IMG_DIM, IMG_DIM, device="cuda", dtype=torch.bfloat16)
         decoded = decode(noise)
-        denoised    = encode(decoded)
-        denoised90  = torch.rot90(encode(torch.rot90(decoded, 1, (3, 2))), -1, (3, 2))
-        denoised180 = torch.rot90(encode(torch.rot90(decoded, 2, (3, 2))), -2, (3, 2))
-        denoised270 = torch.rot90(encode(torch.rot90(decoded, 3, (3, 2))), -3, (3, 2))
+        denoised = encode(decoded)
+        assert denoised.shape == (BS, 16, IMG_DIM, IMG_DIM)
 
-        print(denoised.shape)
-        x = helpers.latent_img_to_in_samples(denoised)
-        print(x.shape)
-        x90 = helpers.latent_img_to_in_samples(denoised90)
-        x180 = helpers.latent_img_to_in_samples(denoised180)
-        x270 = helpers.latent_img_to_in_samples(denoised270)
+        X = denoised.float()
 
-        y = denoised.permute(0, 2, 3, 1).reshape((-1, 16))
-        print(y.shape)
-        y90 = denoised90.permute(0, 2, 3, 1).reshape((-1, 16))
-        y180 = denoised180.permute(0, 2, 3, 1).reshape((-1, 16))
-        y270 = denoised270.permute(0, 2, 3, 1).reshape((-1, 16))
+        Y = X
+        Y90 = apply_ideal_model(denoised, 1).float()
+        Y180 = apply_ideal_model(denoised, 2).float()
+        Y270 = apply_ideal_model(denoised, 3).float()
 
-        X = torch.cat([x, x90, x180, x270]).to(torch.float32)
-        Y90 = torch.cat([y90, y180, y270, y]).to(torch.float32)
-        Y180 = torch.cat([y180, y270, y, y90]).to(torch.float32)
-        Y270 = torch.cat([y270, y, y90, y180]).to(torch.float32)
+        return BS, X, Y, Y90, Y180, Y270
 
-        return X, Y90, Y180, Y270
+
+def save_test_image(dir_path, model90, model_name, model180, model270, inv_weight):
+    with torch.no_grad():
+        test_img = torchvision.io.read_image(os.path.join(dir_path, "assets/donut.png")) * (1/255)
+        og_test_img = pipeline.image_processor.preprocess(test_img)
+        test_img = rotate90(og_test_img, -1)
+        test_latents = helpers.encode(test_img)
+        assert test_latents.shape == (1, 16, IMG_DIM, IMG_DIM)
+
+        # the target
+        test_target = apply_ideal_model(test_latents.repeat(8, 1, 1, 1), 1)[0:1]
+        helpers.latent_to_pil(test_target).save(os.path.join(dir_path, "latent_transforms/images/target.png"))
+
+        # if we do nothing, i.e. apply the identity
+        identity = rotate90(test_latents, 1)
+        helpers.latent_to_pil(identity).save(os.path.join(dir_path, "latent_transforms/images/identity.png"))
+
+        # if we apply our model
+        model_out = apply_model(test_latents.float(), model90, 1)
+        helpers.latent_to_pil(model_out.to(torch.bfloat16)).save(os.path.join(dir_path, f"latent_transforms/images/{model_name}_{KERNEL_SIZE}_{PADDING}_{inv_weight}.png"))
+
+        test_img = rotate90(og_test_img, -2)
+        test_latents = helpers.encode(test_img)
+        model_out = apply_model(test_latents.float(), model180, 2)
+        helpers.latent_to_pil(model_out.to(torch.bfloat16)).save(os.path.join(dir_path, f"latent_transforms/images/{model_name}_{KERNEL_SIZE}_{PADDING}_{inv_weight}(180).png"))
+
+        test_img = rotate90(og_test_img, 1)
+        test_latents = helpers.encode(test_img) 
+        model_out = apply_model(test_latents.float(), model270, 3)
+        helpers.latent_to_pil(model_out.to(torch.bfloat16)).save(os.path.join(dir_path, f"latent_transforms/images/{model_name}_{KERNEL_SIZE}_{PADDING}_{inv_weight}(270).png"))
+
+        test_latents = helpers.encode(og_test_img) 
+        helpers.latent_to_pil(inverted(model90, 1, model270, 3, test_latents.float()).to(torch.bfloat16)).save(os.path.join(dir_path, f"latent_transforms/images/{model_name}_{KERNEL_SIZE}_{PADDING}_{inv_weight}(90+270).png"))
+
+
+
+def inverted(model, rot1, inv_model, rot2, X):
+    out1 = apply_model(X, model, rot1)
+    out2 = apply_model(out1, inv_model, rot2)
+    return out2
+
+
+def smoothstep(x):
+    return 3 * x ** 2 - 2 * x ** 3
+
+
+def train_and_save(nr_samples, model_fn, lr=2e-3, nr_epochs=2500, inv_weight=1):
     
+    BS, X, Y, Y90, Y180, Y270 = generate_dataset(nr_samples)
 
-
-def train(nr_samples, lr=2e-3, nr_epochs=2500):
-    X, Y90, Y180, Y270 = generate_dataset(nr_samples)
-    BS, IN = X.shape
+    model90  = model_fn(X)
+    model180 = model_fn(X)
+    model270 = model_fn(X)
 
     dir_path = os.path.join(helpers.get_src_path(), "..")
-
-    test_img = torchvision.io.read_image(os.path.join(dir_path, "assets/donut.png")) * (1/255)
-    test_img = pipeline.image_processor.preprocess(test_img)
-    test_img = torch.rot90(test_img, -1, (3, 2))
-
-    test_target = torch.rot90(test_img, 1, (3, 2))
-    pipeline.image_processor.postprocess(test_target, output_type="pil")[0].save(os.path.join(dir_path, "out/LT_target.png"))
-
-    test_latents = torch.rot90(helpers.encode(test_img), 1, (3, 2))
-    TEST_BS, TEST_C, TEST_H, TEST_W = test_latents.shape
-    helpers.latent_to_pil(test_latents).save(os.path.join(dir_path, "out/LT_identity.png"))
-
-    torch.set_printoptions(linewidth=200, precision=4, sci_mode=False)
-
-    models = []
-
-    BS, OUT = Y90.shape
-
-    model90  = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
-    model180 = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
-    model270 = torch.nn.Linear(IN, OUT, bias=False, dtype=X.dtype, device=X.device)
 
     opt = torch.optim.AdamW(list(model90.parameters()) + list(model180.parameters()) + list(model270.parameters()), lr=lr)
     mse = torch.nn.MSELoss()
 
-    for i in range(nr_epochs):
+    for i in range(nr_epochs+1):
         opt.zero_grad()
 
-        wt = model90.weight
-        cov1 = wt @ wt.t()
-        wt = model180.weight
-        cov2 = wt @ wt.t()
-        wt = model270.weight
-        cov3 = wt @ wt.t()
+        loss1 = mse(apply_model(X, model90, 1), Y90) + mse(apply_model(X, model180, 2), Y180) + mse(apply_model(X, model270, 3), Y270)
+        loss2 = mse(inverted(model90, 1, model270, 3, X), Y) + mse(inverted(model180, 2, model180, 2, X), Y) + mse(inverted(model270, 3, model90, 1, X), Y)
 
-        r1 = model90.weight @ model270.weight
-        r2 = model180.weight @ model180.weight
-        r3 = model90.weight @ model180.weight @ model90.weight
-        r4 = model270.weight @ model180.weight @ model270.weight
-
-        id = torch.eye(16, device=wt.device, dtype=wt.dtype)
-
-        cov_loss = mse(cov1, id) + mse(cov2, id) + mse(cov3, id)
-        orth_loss = mse(r1, id) + mse(r2, id) + mse(r3, id) + mse(r4, id)
-
-        loss = mse(model90(X), Y90) + mse(model180(X), Y180) + mse(model270(X), Y270) + 1000*cov_loss + 1000*orth_loss
+        loss = loss1 + inv_weight * smoothstep(i / nr_epochs) * loss2
+        # loss = loss1 + 10 * loss2
+        
         loss.backward()
         opt.step()
 
         if i % (nr_epochs // 20) == 0:
-            print(i, ", ", loss.item(), ", ", cov_loss.item(), ", ", orth_loss.item())
-        
+            print(i, "\t", loss1.item(), "\t", loss2.item(), "\t", (inverted(model90, 1, model270, 3, X) - Y).abs().max().item())
+
+
+    save_test_image(dir_path, model90, model_fn.__name__, model180, model270, inv_weight)
     
-    wt = model90.weight
-    cov = wt @ wt.t()
-    print(cov)
-
-    print(model90.weight @ model270.weight)
-
-    test_linear = model90(helpers.latent_img_to_in_samples(test_latents.float())).reshape(TEST_BS, TEST_H, TEST_W, TEST_C).permute((0, 3, 1, 2))
-    helpers.latent_to_pil(test_linear.to(torch.bfloat16)).save(os.path.join(dir_path, "out/LT_linear.png"))
-    
-    torch.save(model90.state_dict(), os.path.join(dir_path, f"latent_transforms/rot90.pt"))
-    torch.save(model180.state_dict(), os.path.join(dir_path, f"latent_transforms/rot180.pt"))
-    torch.save(model270.state_dict(), os.path.join(dir_path, f"latent_transforms/rot270.pt"))
+    torch.save(model90.state_dict(), os.path.join(dir_path, f"latent_transforms/{model_fn.__name__}90_{KERNEL_SIZE}_{PADDING}_{inv_weight}.pt"))
+    torch.save(model180.state_dict(), os.path.join(dir_path, f"latent_transforms/{model_fn.__name__}180_{KERNEL_SIZE}_{PADDING}_{inv_weight}.pt"))
+    torch.save(model270.state_dict(), os.path.join(dir_path, f"latent_transforms/{model_fn.__name__}270_{KERNEL_SIZE}_{PADDING}_{inv_weight}.pt"))
 
 
 
+def linear(X):
+    return torch.nn.Linear(model_in_dim(), model_out_dim(), bias=False, dtype=X.dtype, device=X.device)
 
-train(100000, nr_epochs=25000)
+def linear_with_bias(X):
+    return torch.nn.Linear(model_in_dim(), model_out_dim(), dtype=X.dtype, device=X.device)
+
+def mlp(X):
+    return torch.nn.Sequential(
+        torch.nn.Linear(model_in_dim(), 512, dtype=X.dtype, device=X.device),
+        torch.nn.ReLU(),
+        torch.nn.Linear(512, model_out_dim(), dtype=X.dtype, device=X.device),
+    )
+
+# train_and_save(50000, linear, lr=2e-3, nr_epochs=2000, inv_weight=2)
+# train_and_save(50000, mlp, lr=1e-3, nr_epochs=1000, inv_weight=2)
+
+

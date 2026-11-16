@@ -70,22 +70,26 @@ def upscale(img_path, out_filename="upscaled.png"):
     final_upscaled_image.save(os.path.join(script_dir, "..", "out", out_filename))
 
 
-def add_cut_lines(img_path, w, h, print1_or_2 = 1, out_filename="with_lines.png"):
+# bigger threshold => thicker lines
+def add_cut_lines(img_path, w, h, threshold=100, print1_or_2 = 1, out_filename="with_lines.png"):
     img = cv2.imread(img_path)
     pdf_path = os.path.join(script_dir, "..", "puzzles", f"{w}x{h}", f"print{print1_or_2}.pdf")
     H, W, C = img.shape
     pdf = fitz.open(pdf_path)[0]
     pdf_w, pdf_h = pdf.rect.width, pdf.rect.height
 
-    print(H / pdf_h, " ==? ", W / pdf_w)
-    
-    zoom = H / pdf_h
-    mat = fitz.Matrix(zoom, zoom)
+    zoom1, zoom2 = H / pdf_h, W / pdf_w
 
+    mat = fitz.Matrix(zoom1, zoom1)
     pix = pdf.get_pixmap(matrix=mat, alpha=False)
+
+    if pix.h != H or pix.w != W:
+        mat = fitz.Matrix(zoom2, zoom2)
+        pix = pdf.get_pixmap(matrix=mat, alpha=False)
+
     puzzle_layout_img = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.h, pix.w, 3))
     puzzle_layout_img = cv2.cvtColor(puzzle_layout_img, cv2.COLOR_RGB2GRAY)
-    _, mask = cv2.threshold(puzzle_layout_img, 70, 255, cv2.THRESH_BINARY_INV)
+    _, mask = cv2.threshold(puzzle_layout_img, threshold, 255, cv2.THRESH_BINARY_INV)
 
     img[mask == 255] = 0
 
@@ -96,5 +100,5 @@ def add_cut_lines(img_path, w, h, print1_or_2 = 1, out_filename="with_lines.png"
     cv2.imwrite(os.path.join(script_dir, "..", "out", out_filename), img)
 
 
-upscale("selection/puzzle_alpcow_7x5_28.png", out_filename="cow75up.png")
-add_cut_lines("out/cow75up.png", 7, 5, out_filename="cow75wl.png")
+# upscale("selection/puzzle_alpcow_7x5_28.png", out_filename="cow75up.png")
+# add_cut_lines("out/cow75up.png", 7, 5, out_filename="cow75wl.png")
